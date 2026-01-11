@@ -58,50 +58,96 @@ Note: This is a preliminary notice. Detailed terms and conditions are available 
 
 /**
  * Generate Chapter 02: Detailed Tender Notice (AI_GENERATE)
+ * Phase 3A: Upgraded with authentic Maharashtra PWD-style content
  */
 async function generateChapter02(inputForm: TenderInputForm): Promise<ChapterGenerationResult> {
-  const { nameOfWork, authority, location, estimatedCost, timeForCompletion, contractorClass, securityDepositPercent } = inputForm;
+  const { nameOfWork, authority, location, estimatedCost, timeForCompletion, contractorClass, securityDepositPercent, emd, contractType } = inputForm;
   
   const systemPrompt = `${GLOBAL_SYSTEM_PROMPT}
 
-You are generating Chapter 02: Detailed Tender Notice for an Indian government infrastructure tender.
+You are generating Chapter 02: Detailed Tender Notice for a Maharashtra Public Works Department (PWD) infrastructure tender.
 
-CONSTRAINTS:
-- Expand on the preliminary notice with comprehensive details
-- Include technical and financial eligibility criteria
-- Follow standard PWD tender format
-- Be specific but avoid inventing exact regulatory numbers
-- Use formal government language`;
+CRITICAL TONE AND LANGUAGE REQUIREMENTS:
+- Use formal, conservative, government-bureaucratic language
+- Employ passive voice heavily ("The tenderer shall...", "It shall be ensured that...")
+- Write in a legally serious, non-conversational manner
+- Use repetitive, formal PWD-style phrasing
+- NO marketing language or corporate tone whatsoever
+- Include phrases like:
+  * "The tenderer shall..."
+  * "No extra claim whatsoever shall be entertained..."
+  * "The decision of the Executive Engineer shall be final and binding..."
+  * "Rates quoted shall be inclusive of all taxes, duties, royalties, cess, etc..."
+  * "as per applicable rules"
+  * "in accordance with the provisions of..."
 
-  const userPrompt = `Generate a detailed tender notice for the following project:
+LEGAL AND DOMAIN CONSTRAINTS:
+- DO NOT invent specific laws or acts
+- Use generic phrases like "as per applicable rules" or "as per government norms"
+- Use realistic authority hierarchy: Executive Engineer → Superintending Engineer → Chief Engineer
+- Keep financial and legal terms conservative and standard
+- Avoid exact regulatory numbers unless universally applicable
 
-Project: ${nameOfWork}
-Authority: ${authority}
-Location: ${location}
-Estimated Cost: Rs. ${estimatedCost.toLocaleString('en-IN')}
-Completion Time: ${timeForCompletion} months
-Contractor Class Required: ${contractorClass}
-Security Deposit: ${securityDepositPercent}% of contract value
+STRUCTURE REQUIREMENTS:
+- Generate 20 numbered clauses or sections
+- Each clause must be formal, clear, and legally sound
+- Format with proper numbering (1., 2., 3., etc.)
+- Write comprehensive but not verbose content
+- Ensure professional tender document authenticity`;
 
-The detailed notice must include:
-1. Comprehensive project scope and objectives
-2. Detailed eligibility requirements (technical capability, financial standing, past experience)
-3. Submission process and documentation checklist
-4. Evaluation criteria overview
-5. Performance security requirements
-6. Project timeline and key milestones
-7. Site visit arrangements
+  const userPrompt = `Generate a comprehensive Detailed Tender Notice (Chapter 02) for the following Maharashtra PWD infrastructure project:
 
-Format this as Chapter 02 of an official tender document.`;
+Project Details:
+- Name of Work: ${nameOfWork}
+- Authority: ${authority}
+- Location: ${location}
+- Estimated Cost: Rs. ${estimatedCost.toLocaleString('en-IN')}
+- Period of Completion: ${timeForCompletion} months
+- Contractor Class Required: ${contractorClass}
+- Security Deposit: ${securityDepositPercent}% of contract value
+- Earnest Money Deposit (EMD): Rs. ${emd.toLocaleString('en-IN')}
+- Contract Type: ${contractType}
+
+Generate EXACTLY the following 20 clauses/sections in formal Maharashtra PWD style:
+
+1. INVITATION OF TENDER
+2. NAME OF WORK
+3. ESTIMATED COST
+4. EARNEST MONEY DEPOSIT (EMD)
+5. TENDER FEE
+6. PERIOD OF COMPLETION
+7. ELIGIBILITY CRITERIA
+8. CLASS OF CONTRACTOR
+9. EXPERIENCE REQUIREMENTS
+10. AVAILABILITY OF TENDER DOCUMENTS
+11. SUBMISSION OF TENDER
+12. OPENING OF TENDER
+13. VALIDITY OF TENDER
+14. SECURITY DEPOSIT / PERFORMANCE SECURITY
+15. TAXES, DUTIES, ROYALTIES
+16. AUTHORITY OF DEPARTMENTAL OFFICERS
+17. RIGHT TO REJECT TENDERS
+18. CONDITIONAL TENDERS
+19. JURISDICTION / ARBITRATION
+20. FINALITY OF DECISION
+
+IMPORTANT FORMATTING:
+- Number each section clearly (1., 2., 3., etc.)
+- Write in passive, formal government language
+- Keep each section clear but comprehensive
+- Use proper PWD terminology and phrases
+- Ensure legal seriousness throughout
+
+Do NOT include chapter heading ("CHAPTER 02") - I will add that. Start directly with section 1.`;
 
   const result = await generateWithLlmSafe({
     systemPrompt,
     userPrompt,
     inferenceOptions: {
-      temperature: 0.25,
-      top_p: 0.9,
-      repeat_penalty: 1.1,
-      max_tokens: 2048,
+      temperature: 0.2,  // Lower temperature for more formal, consistent output
+      top_p: 0.85,        // Slightly lower for more conservative language
+      repeat_penalty: 1.15, // Higher penalty to reduce repetition
+      max_tokens: 3072,   // Increased for 20 comprehensive clauses
     },
   });
 
