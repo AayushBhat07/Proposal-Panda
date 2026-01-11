@@ -5,11 +5,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import mammoth from 'mammoth';
 
 /**
  * Extract text from .docx file
- * In production, use 'mammoth' or 'docx' library
- * For Phase 4A, we use simplified extraction
+ * Uses mammoth library for reliable extraction
  */
 export async function extractTextFromDocx(filePath: string): Promise<string> {
   try {
@@ -18,18 +18,31 @@ export async function extractTextFromDocx(filePath: string): Promise<string> {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    // For now, if .docx is not available, try to read .txt or other formats
     const ext = path.extname(filePath).toLowerCase();
     
+    // Handle plain text formats
     if (ext === '.txt' || ext === '.md') {
       return fs.readFileSync(filePath, 'utf-8');
     }
 
+    // Handle .docx format
     if (ext === '.docx') {
-      // In production, use docx library
-      // For Phase 4A mock, return placeholder
-      console.warn('⚠️  .docx extraction not yet implemented. Please provide .txt version.');
-      return 'DOCX extraction pending. Please provide text version.';
+      console.log(`📄 Extracting text from .docx file...`);
+      
+      // Read the .docx file
+      const buffer = fs.readFileSync(filePath);
+      
+      // Extract text using mammoth
+      const result = await mammoth.extractRawText({ buffer });
+      const extractedText = result.value;
+      
+      if (extractedText.length < 100) {
+        console.warn('⚠️  Limited text extracted from .docx. File may be empty or corrupted.');
+      } else {
+        console.log(`✓ Extracted ${extractedText.length} characters from .docx`);
+      }
+      
+      return extractedText || 'Failed to extract meaningful text from .docx';
     }
 
     throw new Error(`Unsupported file format: ${ext}`);
