@@ -42,6 +42,23 @@ export default function AssembledTenderView({
           </h2>
           <p className="mt-1 text-sm text-gray-600">{tenderTitle}</p>
         </div>
+        {hasAnyContent && (
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                alert(
+                  'PDF Export (Beta)\n\n' +
+                  'PDF export is currently in development.\n\n' +
+                  'Use the Word (.docx) export as the primary format for now.'
+                );
+              }}
+            >
+              📄 Export to PDF (Beta)
+            </Button>
+          </div>
+        )}
       </div>
 
       {!hasAnyContent ? (

@@ -51,7 +51,7 @@ export const USER_ROLES = {
  */
 export const AI_CONFIG = {
   OLLAMA_BASE_URL: 'http://localhost:11434',
-  MODEL_NAME: 'llama3:8b-instruct',
+  MODEL_NAME: 'llama3:latest',
   TIMEOUT_MS: 40000, // 40 seconds
   MAX_RETRIES: 1,
   DEFAULT_INFERENCE: {

@@ -609,50 +609,465 @@ Do NOT include chapter heading ("CHAPTER 07") - I will add that. Start directly 
 }
 
 /**
- * Generate Chapter 08: Proforma of Bonds (TEMPLATE_FILL)
+ * Generate Chapter 08: Proforma of Bonds & Circulars (TEMPLATE_FILL)
+ * Phase 3D: Enhanced with PWD legal realism, authentic bond structures, and conservative legal language
  */
 function generateChapter08(inputForm: TenderInputForm): string {
-  const { authority, estimatedCost, securityDepositPercent } = inputForm;
+  const { authority, estimatedCost, securityDepositPercent, emd, nameOfWork, timeForCompletion } = inputForm;
   
   const securityAmount = Math.round(estimatedCost * (securityDepositPercent / 100));
+  const emdAmount = emd;
+  const validityMonths = timeForCompletion + 6; // Completion period + defect liability
   
-  return `CHAPTER 08: PROFORMA OF BONDS & CIRCULARS
+  return `CHAPTER 08: PROFORMA OF BONDS, GUARANTEES & CIRCULARS
 
-8.1 PERFORMANCE SECURITY BOND
+8.1 EARNEST MONEY DEPOSIT (EMD) BOND – PROFORMA
 
-BANK GUARANTEE FOR PERFORMANCE SECURITY
+To,
+The Executive Engineer,
+${authority}
 
-To: ${authority}
+REFERENCE: Tender No. __________ dated __________
+Work: ${nameOfWork}
 
-WHEREAS _________________________ (hereinafter called "the Contractor") has undertaken, in pursuance of Contract No. _____________ dated ________ to execute the work _________________________.
+WHEREAS _________________________________ (Name of Contractor) having its registered office at _________________________________ (Address) (hereinafter called "the Contractor" which expression shall unless repugnant to the context or meaning thereof include its successors, administrators and permitted assigns) has submitted a tender dated __________ for execution of the work mentioned above;
 
-AND WHEREAS it has been stipulated in the said contract that the Contractor shall furnish you with a Bank Guarantee for Rs. ${securityAmount.toLocaleString('en-IN')} (${securityDepositPercent}% of contract value) as security for compliance with the Contractor's obligations in accordance with the Contract;
+AND WHEREAS it is one of the conditions of the said tender that the Contractor shall deposit with the aforesaid authority a sum of Rs. ${emdAmount.toLocaleString('en-IN')} (Rupees _________________________________ only) as Earnest Money Deposit for due performance and fulfillment of the tender conditions;
 
-NOW THEREFORE we, _________________________ Bank (hereinafter referred to as "the Bank") at the request of the Contractor do hereby undertake to pay to you an amount not exceeding Rs. ${securityAmount.toLocaleString('en-IN')} against any loss or damage caused to or suffered by you by reason of any breach by the said Contractor of any of the terms and conditions contained in the said Contract.
+AND WHEREAS we, _________________________________ (Name of Bank), a banking company within the meaning of the Banking Regulation Act, 1949, and having its branch office at _________________________________ (hereinafter called "the Bank") have agreed to furnish this Bank Guarantee on behalf of the said Contractor;
 
-This guarantee shall remain valid until _____________ (completion date + defect liability period).
+NOW THIS GUARANTEE WITNESSETH that the Bank hereby unconditionally and irrevocably guarantees and undertakes to pay on demand to the Executive Engineer, ${authority} without any demur, reservation, recourse or protest, and without reference to the Contractor, such sum or sums not exceeding Rs. ${emdAmount.toLocaleString('en-IN')} (Rupees _________________________________ only) as the Executive Engineer may demand in writing.
 
-Valid from: ________________
-Valid until: ________________
+This guarantee shall remain valid and binding upon the Bank until such time the tender is accepted and the Contractor furnishes the required Performance Security, or until the tender is rejected, or until the Earnest Money Deposit is refunded to the Contractor as per the tender conditions, whichever is earlier.
 
-Signature of Authorized Bank Official: _______________________
-Name: __________________________
-Designation: ____________________
-Bank Seal: ______________________
+The decision of the Executive Engineer regarding the invocation and encashment of this guarantee shall be final and binding on the Bank.
+
+The Bank further agrees that this guarantee shall be a continuing guarantee and shall remain in full force and effect till the obligations of the Contractor under the tender documents are fully discharged.
+
+NOTWITHSTANDING anything contained herein:
+
+1. The Bank's liability under this guarantee shall not exceed Rs. ${emdAmount.toLocaleString('en-IN')}.
+
+2. This guarantee shall not be discharged or affected by any change in the constitution of the Contractor or the Bank.
+
+3. The Bank shall not be released of its obligations under this guarantee by any exercise or non-exercise of any right, power or remedy by the Executive Engineer.
+
+4. This guarantee shall be valid up to __________ (date) and shall be extended, if required, on receipt of written request from the Contractor.
+
+IN WITNESS WHEREOF the Bank, through its authorized official, has set and subscribed its hand on this _____ day of __________ 20___.
+
+For and on behalf of the Bank:
+
+Signature: _______________________
+Name: ___________________________
+Designation: _____________________
+Bank Seal: _______________________
+Branch: __________________________
+Date: ____________________________
+
+Witnesses:
+
+1. Signature: _____________________
+   Name: _________________________
+   Address: _______________________
+   
+2. Signature: _____________________
+   Name: _________________________
+   Address: _______________________
 
 ---
 
-8.2 EARNEST MONEY DEPOSIT BOND
+8.2 PERFORMANCE SECURITY / PERFORMANCE GUARANTEE – PROFORMA
 
-Similar format as above, for EMD purposes.
+To,
+The Executive Engineer,
+${authority}
+
+REFERENCE: Agreement No. __________ dated __________
+Work: ${nameOfWork}
+Contract Value: Rs. ${estimatedCost.toLocaleString('en-IN')}
+
+WHEREAS _________________________________ (Name of Contractor) having its registered office at _________________________________ (Address) (hereinafter called "the Contractor") has entered into an Agreement dated __________ with the Executive Engineer, ${authority} (hereinafter called "the Employer") for execution of the work: ${nameOfWork}, for an accepted contract amount of Rs. ${estimatedCost.toLocaleString('en-IN')};
+
+AND WHEREAS it is one of the conditions of the said Agreement that the Contractor shall deposit with the Employer a sum equivalent to ${securityDepositPercent}% of the contract value, being Rs. ${securityAmount.toLocaleString('en-IN')} (Rupees _________________________________ only) as Security Deposit / Performance Security for due and faithful performance of the contract and observance of all terms, conditions, stipulations and covenants therein contained;
+
+AND WHEREAS the Contractor has requested us, _________________________________ (Name of Bank), a banking company within the meaning of the Banking Regulation Act, 1949, and having its branch office at _________________________________ (hereinafter called "the Bank"), to furnish the Performance Guarantee on its behalf;
+
+NOW THIS GUARANTEE WITNESSETH and the Bank hereby unconditionally and irrevocably guarantees and agrees that in the event of the Contractor committing any breach of or default in complying with any of the terms and conditions of the said Agreement, the Bank shall on demand and without demur pay to the Employer such sum or sums not exceeding Rs. ${securityAmount.toLocaleString('en-IN')} (Rupees _________________________________ only) as the Employer may from time to time demand, without requiring the Employer to prove or show grounds or reasons for such demand.
+
+This guarantee shall remain valid and in full force and effect from the date of execution of the Agreement until the expiry of _____ months (${validityMonths} months) from the scheduled date of completion of the work, or until the Performance Security is returned to the Contractor by the Employer after successful completion and final acceptance of the work including the defect liability period, whichever is later.
+
+The Bank further agrees that:
+
+1. The Employer shall be the sole judge for deciding whether the Contractor has committed any breach of or default in observing and performing any of the terms and conditions of the Agreement, and the decision of the Employer that the Contractor is in default thereunder shall be final and binding on the Bank.
+
+2. The guarantee herein contained shall not be affected by any change in the constitution of the Contractor or the Bank or the Employer.
+
+3. The Bank shall not be released from its liability under this guarantee by reason of any forbearance, indulgence, or extension of time given by the Employer to the Contractor.
+
+4. This guarantee shall be a continuing guarantee and shall remain in force until all obligations of the Contractor under the Agreement are fully discharged and a certificate to that effect is issued by the Employer.
+
+5. The Bank's liability under this guarantee shall not at any time exceed Rs. ${securityAmount.toLocaleString('en-IN')}.
+
+6. Any notice or demand upon the Bank shall be in writing and shall be deemed to have been duly given if sent by registered post or delivered at the address mentioned herein.
+
+7. This guarantee shall be governed by and construed in accordance with Indian Laws, and the Courts at __________ (location) shall have exclusive jurisdiction.
+
+IN WITNESS WHEREOF the Bank, through its authorized official, has set and subscribed its hand on this _____ day of __________ 20___.
+
+For and on behalf of the Bank:
+
+Signature: _______________________
+Name: ___________________________
+Designation: _____________________
+Bank Seal: _______________________
+Branch: __________________________
+Contact Details: __________________
+Date: ____________________________
+
+Witnesses:
+
+1. Signature: _____________________
+   Name: _________________________
+   Address: _______________________
+   
+2. Signature: _____________________
+   Name: _________________________
+   Address: _______________________
 
 ---
 
-8.3 RELEVANT CIRCULARS
+8.3 BANK GUARANTEE FORMAT – GENERAL PROFORMA
 
-Note: User may upload additional circulars, notifications, or amendments relevant to this tender.
+To,
+The Executive Engineer,
+${authority}
 
-Status: PENDING USER UPLOADS (Optional)`;
+REFERENCE: Tender / Contract No. __________
+Work: ${nameOfWork}
+
+We, _________________________________ (Name of Bank), having our registered office at _________________________________ and branch office at _________________________________, do hereby unconditionally and irrevocably guarantee the payment of any sum or sums up to a maximum aggregate sum of Rs. __________ (Rupees _________________________________ only) on behalf of _________________________________ (Name of Contractor), having its registered office at _________________________________.
+
+We, the said Bank, do hereby undertake to pay immediately on first written demand by the Executive Engineer, ${authority}, without any demur, reservation, recourse, contest or protest, and without requiring the Executive Engineer to prove or show grounds for such demand, any sum or sums within the above-mentioned limit.
+
+This guarantee shall be valid and shall remain in full force and effect from __________ to __________ (dates).
+
+Any demand for payment under this guarantee shall be made in writing and delivered to the undersigned at the address mentioned below on or before the expiry date of this guarantee.
+
+This guarantee shall not be discharged or affected by any change in the constitution of the Contractor or the Bank.
+
+Notwithstanding anything contained herein, the liability of the Bank under this guarantee is restricted to Rs. __________ (Rupees _________________________________ only) and shall remain in force until __________.
+
+This guarantee shall be governed by the Laws of India and the Courts at __________ shall have exclusive jurisdiction.
+
+Dated this _____ day of __________ 20___.
+
+For _________________________________ (Bank Name)
+
+Signature: _______________________
+Name: ___________________________
+Designation: _____________________
+Official Seal: ____________________
+Branch: __________________________
+Address: _________________________
+Contact: _________________________
+Date: ____________________________
+
+---
+
+8.4 INDEMNITY BOND
+
+KNOW ALL MEN BY THESE PRESENTS
+
+This Indemnity Bond is executed on this _____ day of __________ 20___ at __________.
+
+BY
+
+_________________________________ (Name of Contractor), a _________________________________ (Proprietorship / Partnership / Company), having its registered office at _________________________________ (hereinafter called "the Indemnifier" which expression shall unless repugnant to the context or meaning thereof include its successors and permitted assigns) of the ONE PART;
+
+IN FAVOUR OF
+
+The Executive Engineer, ${authority} (hereinafter called "the Employer" which expression shall include its successors and assigns) of the OTHER PART.
+
+WHEREAS the Indemnifier has been awarded the work of ${nameOfWork} under Agreement No. __________ dated __________ for a contract value of Rs. ${estimatedCost.toLocaleString('en-IN')};
+
+AND WHEREAS in connection with the execution of the said work, the Indemnifier is required to execute this Indemnity Bond in favour of the Employer;
+
+NOW THIS BOND WITNESSETH AS FOLLOWS:
+
+1. The Indemnifier hereby agrees to indemnify, defend, and hold harmless the Employer, its officers, employees, agents, and representatives from and against any and all claims, demands, actions, suits, proceedings, losses, damages, costs, charges, and expenses whatsoever which the Employer may sustain or incur by reason of:
+
+   (a) Any breach or non-performance of the contract by the Indemnifier;
+   (b) Any act, omission, negligence, or default on the part of the Indemnifier, its employees, agents, or sub-contractors;
+   (c) Any damage to property or injury to persons arising out of or in connection with the execution of the work;
+   (d) Any claims by third parties arising from the Indemnifier's operations;
+   (e) Any violation of applicable laws, rules, regulations, or orders by the Indemnifier;
+   (f) Any defect in workmanship or materials supplied by the Indemnifier.
+
+2. The Indemnifier shall, at its own cost and expense, defend all suits, claims, or proceedings that may be brought against the Employer arising from any of the matters set out in Clause 1 above.
+
+3. This indemnity shall be a continuing obligation and shall remain in full force and effect until all obligations of the Indemnifier under the contract are fully discharged.
+
+4. The Indemnifier shall not be released from its obligations under this Bond by reason of any extension of time granted or any forbearance or indulgence shown to the Indemnifier by the Employer.
+
+5. The decision of the Employer as to whether any event giving rise to a claim under this indemnity has occurred shall be final and binding on the Indemnifier.
+
+6. This Indemnity Bond shall be governed by the Laws of India and the Courts at __________ shall have exclusive jurisdiction.
+
+IN WITNESS WHEREOF the Indemnifier has set and subscribed its hand the day and year first hereinabove written.
+
+For and on behalf of the Indemnifier:
+
+Signature: _______________________
+Name: ___________________________
+Designation: _____________________
+Official Seal: ____________________
+Date: ____________________________
+
+Witnesses:
+
+1. Signature: _____________________
+   Name: _________________________
+   Address: _______________________
+   Occupation: ____________________
+   
+2. Signature: _____________________
+   Name: _________________________
+   Address: _______________________
+   Occupation: ____________________
+
+---
+
+8.5 SURETY BOND
+
+KNOW ALL MEN BY THESE PRESENTS
+
+This Surety Bond is executed on this _____ day of __________ 20___ at __________.
+
+BY
+
+1. _________________________________ (Name of Contractor) having its office at _________________________________ (hereinafter called "the Principal")
+
+AND
+
+2. _________________________________ (Name of Surety) having its office at _________________________________ (hereinafter called "the Surety")
+
+(The Principal and the Surety are hereinafter collectively referred to as "the Obligors")
+
+IN FAVOUR OF
+
+The Executive Engineer, ${authority} (hereinafter called "the Obligee").
+
+WHEREAS the Principal has entered into an Agreement dated __________ with the Obligee for execution of the work: ${nameOfWork}, for a contract sum of Rs. ${estimatedCost.toLocaleString('en-IN')};
+
+AND WHEREAS the Obligee requires the Principal to furnish a Surety Bond as security for faithful performance of the contract;
+
+NOW THEREFORE, the Principal and the Surety hereby jointly and severally bind themselves, their heirs, executors, administrators, successors, and assigns unto the Obligee in the penal sum of Rs. __________ (Rupees _________________________________ only) for the payment of which the Obligors bind themselves firmly by these presents.
+
+THE CONDITION OF THIS OBLIGATION IS SUCH THAT:
+
+IF the Principal shall faithfully perform and fulfill all the undertakings, covenants, terms, conditions, and agreements of the said Contract during the original term thereof and any extensions that may be granted by the Obligee, with or without notice to the Surety, and during the defect liability period, and shall indemnify and save harmless the Obligee from all costs and damages which the Obligee may suffer by reason of the Principal's default or failure, and shall reimburse and repay the Obligee all outlay and expense which the Obligee may incur in making good any such default, then this obligation shall be void; otherwise it shall remain in full force and effect.
+
+The Surety hereby agrees that:
+
+1. This Bond shall be deemed to be modified automatically so as to conform to any amendments or modifications in the Contract, provided such amendments or modifications do not substantially increase the Surety's obligations.
+
+2. No change, extension of time, alteration, or addition to the terms of the Contract or to the work to be performed thereunder shall in any way affect the obligations of the Surety under this Bond, and the Surety hereby waives notice of any such change, extension, alteration, or addition.
+
+3. In the event of default by the Principal, the Surety shall, at the option of the Obligee, either:
+   (a) Complete the contract in accordance with its terms and conditions; or
+   (b) Pay to the Obligee the penal sum mentioned in this Bond.
+
+4. The Obligee shall have the right to proceed against the Surety without first proceeding against the Principal or exhausting any remedies against the Principal.
+
+5. The decision of the Obligee as to the default of the Principal shall be final and binding on the Surety.
+
+6. This Bond shall remain in force until all obligations of the Principal under the Contract are discharged and a certificate of satisfactory completion is issued by the Obligee.
+
+7. This Bond shall be governed by the Laws of India and the Courts at __________ shall have exclusive jurisdiction.
+
+IN WITNESS WHEREOF the Obligors have executed this Bond on the day and year first above written.
+
+For and on behalf of the Principal:
+
+Signature: _______________________
+Name: ___________________________
+Designation: _____________________
+Seal: ____________________________
+Date: ____________________________
+
+For and on behalf of the Surety:
+
+Signature: _______________________
+Name: ___________________________
+Designation: _____________________
+Seal: ____________________________
+Date: ____________________________
+
+Witnesses:
+
+1. Signature: _____________________
+   Name: _________________________
+   Address: _______________________
+   
+2. Signature: _____________________
+   Name: _________________________
+   Address: _______________________
+
+---
+
+8.6 CONDITIONS GOVERNING VALIDITY OF BONDS
+
+8.6.1 APPLICABILITY
+
+All bonds, guarantees, and securities furnished by the Contractor under this contract shall be subject to the following conditions, which shall be deemed to be incorporated in each bond or guarantee unless expressly excluded.
+
+8.6.2 VALIDITY PERIOD
+
+The validity period of each bond or guarantee shall be as specified in the respective proforma. In no case shall the validity period be less than the period specified in the contract documents. The Contractor shall ensure that the bond or guarantee remains valid until all obligations under the contract are fully discharged.
+
+8.6.3 EXTENSION OF VALIDITY
+
+If the period of contract is extended or the defect liability period is extended, the Contractor shall ensure that the validity of the bond or guarantee is correspondingly extended. Failure to extend the validity shall entitle the Employer to invoke and encash the existing bond or guarantee.
+
+8.6.4 FORM AND CONTENT
+
+All bonds and guarantees shall be in the proforma prescribed in this chapter or in such other form as may be acceptable to the Employer. The bonds shall be executed on appropriate stamp paper as per applicable Stamp Act. Bank guarantees shall be issued by nationalized banks or scheduled commercial banks acceptable to the Employer.
+
+8.6.5 UNCONDITIONAL NATURE
+
+All bank guarantees shall be unconditional and irrevocable and shall be payable on first demand without requiring the Employer to prove or show grounds or reasons for the demand. The Bank shall not be entitled to withhold payment on any ground whatsoever.
+
+8.6.6 AUTHORITY OF ISSUING BANK
+
+Bank guarantees shall be issued by branches of banks having adequate financial standing and shall be countersigned by the controlling authority of the bank if the branch does not have adequate powers. The Employer reserves the right to verify the authenticity and authority of the bank guarantee.
+
+8.6.7 DEFECTIVE BONDS
+
+If any bond or guarantee submitted by the Contractor is found to be defective in form, content, or validity, the Contractor shall replace the same with a valid bond or guarantee within the time specified by the Employer. Failure to do so shall entitle the Employer to invoke the defective bond or terminate the contract or both.
+
+---
+
+8.7 FORFEITURE & ENCASHMENT CLAUSES
+
+8.7.1 GROUNDS FOR FORFEITURE
+
+The Employer shall be entitled to forfeit and encash the Earnest Money Deposit, Performance Security, or any other bond or guarantee furnished by the Contractor in any of the following events:
+
+(a) If the Contractor withdraws or modifies its tender after opening but before acceptance;
+(b) If the Contractor fails to execute the agreement within the stipulated time after acceptance of tender;
+(c) If the Contractor fails to furnish the required Performance Security within the stipulated time;
+(d) If the Contractor commits any breach of the terms and conditions of the contract;
+(e) If the Contractor fails to complete the work within the stipulated time and the extensions granted;
+(f) If the Contractor abandons the work or shows persistent negligence;
+(g) If the Contractor becomes insolvent or goes into liquidation;
+(h) If the Contractor assigns or sub-lets the contract without written permission;
+(i) If the Contractor is found guilty of corrupt or fraudulent practices;
+(j) If the contract is terminated for default of the Contractor;
+(k) Any other breach or default as specified in the contract documents.
+
+8.7.2 PROCEDURE FOR ENCASHMENT
+
+The decision of the Executive Engineer or any higher authority as to whether any event justifying forfeiture has occurred shall be final and binding on the Contractor and the Bank or Surety. Upon occurrence of any event specified in Clause 8.7.1, the Employer shall be entitled to encash the bond or guarantee by issuing a written demand to the Bank or Surety without requiring to give reasons or prove the grounds for such demand.
+
+8.7.3 APPROPRIATION OF FORFEITED AMOUNT
+
+Any amount forfeited or encashed shall be appropriated by the Employer towards any loss, damage, cost, or expense suffered or incurred by the Employer by reason of the Contractor's breach or default. The forfeiture shall not prejudice any other right or remedy available to the Employer under the contract or under law.
+
+8.7.4 REFUND OF SECURITY
+
+The Performance Security shall be refunded to the Contractor after satisfactory completion of the work and expiry of the defect liability period, subject to no claims being pending against the Contractor. The Employer shall not be liable to pay any interest on the security deposit or on the amount of bank guarantee.
+
+8.7.5 NO WAIVER
+
+The failure or delay by the Employer to exercise any right of forfeiture or encashment shall not constitute a waiver of such right and shall not prevent the Employer from exercising such right at any subsequent time.
+
+---
+
+8.8 EXTENSION OF VALIDITY CLAUSES
+
+8.8.1 OBLIGATION TO EXTEND
+
+Where the period of contract is extended or where the defect liability period is extended or where for any reason the obligations of the Contractor under the contract remain to be discharged beyond the original validity period of any bond or guarantee, the Contractor shall, at least one month before the expiry of such bond or guarantee, arrange to extend the validity of the bond or guarantee for such further period as may be required to cover the extended obligations.
+
+8.8.2 PROCEDURE FOR EXTENSION
+
+The Contractor shall obtain from the issuing Bank or Surety a written confirmation of extension of validity and shall submit the same to the Employer. The extension shall be unconditional and shall be on the same terms and conditions as the original bond or guarantee.
+
+8.8.3 FAILURE TO EXTEND
+
+If the Contractor fails to arrange extension of validity as required under Clause 8.8.1, the Employer shall be entitled to:
+
+(a) Invoke and encash the existing bond or guarantee before its expiry;
+(b) Terminate the contract and forfeit the security; and/or
+(c) Recover any loss or damage from any amount due or that may become due to the Contractor or from the proceeds of the encashed bond or guarantee.
+
+8.8.4 REPLACEMENT OF BONDS
+
+Where a bank or surety is unable or unwilling to extend the validity of a bond or guarantee, the Contractor shall, at least one month before the expiry, arrange to replace the existing bond or guarantee with a fresh bond or guarantee from another acceptable bank or surety, having the same or increased amount and validity period as required.
+
+8.8.5 COST OF EXTENSION
+
+All costs, charges, and expenses relating to the extension of validity or replacement of bonds and guarantees shall be borne by the Contractor, and no extra payment whatsoever shall be made by the Employer on this account.
+
+---
+
+8.9 APPLICABLE AUTHORITY & JURISDICTION
+
+8.9.1 COMPETENT AUTHORITY
+
+For the purposes of invocation, encashment, and all matters relating to the bonds and guarantees under this chapter, the Executive Engineer, ${authority}, or such other authority as may be designated by the Government, shall be the competent authority. The decision of the competent authority on all matters relating to bonds and guarantees shall be final and binding on the Contractor and the Bank or Surety.
+
+8.9.2 FINALITY OF DECISION
+
+The Contractor and the Bank or Surety hereby agree that the decision of the competent authority as to:
+
+(a) Whether any breach or default has occurred;
+(b) Whether the bond or guarantee is liable to be invoked;
+(c) The quantum of amount to be claimed;
+(d) Any other matter relating to the bond or guarantee;
+
+shall be final, conclusive, and binding and shall not be questioned in any court of law or before any other authority.
+
+8.9.3 LEGAL JURISDICTION
+
+All disputes, claims, or matters arising out of or relating to the bonds and guarantees furnished under this contract shall be subject to the exclusive jurisdiction of the Courts at __________ (location of the Employer's office), and the Contractor and the Bank or Surety hereby submit to such jurisdiction.
+
+8.9.4 APPLICABLE LAW
+
+All bonds, guarantees, indemnities, and sureties under this contract shall be governed by and construed in accordance with the Laws of India for the time being in force. In case of any conflict between the terms of the bond or guarantee and the contract, the terms of the contract shall prevail.
+
+8.9.5 NOTICES AND COMMUNICATIONS
+
+All notices, demands, and communications relating to bonds and guarantees shall be in writing and shall be deemed to have been duly given if delivered personally or sent by registered post acknowledgment due to the addresses mentioned in the bond or guarantee or to such other address as may be notified in writing.
+
+---
+
+8.10 REFERENCE TO DEPARTMENTAL CIRCULARS
+
+8.10.1 GENERAL
+
+The forms of bonds, guarantees, and securities prescribed in this chapter are based on standard proformas and practices as per applicable rules and departmental circulars. The Contractor shall familiarize himself with all relevant circulars, notifications, and instructions issued by the Government or the Department from time to time.
+
+8.10.2 CIRCULARS AND AMENDMENTS
+
+Any amendments, modifications, or substitutions to the proformas of bonds and guarantees as may be notified by the Government or the Department through circulars or notifications shall be deemed to be incorporated in this chapter and shall be binding on the Contractor.
+
+8.10.3 COMPLIANCE
+
+The Contractor shall comply with all instructions contained in departmental circulars relating to bonds, guarantees, and securities. Non-compliance with such instructions shall entitle the Employer to reject the bond or guarantee and take such action as may be deemed fit.
+
+8.10.4 ADDITIONAL DOCUMENTS
+
+The Employer reserves the right to call upon the Contractor to furnish such additional bonds, guarantees, indemnities, or securities as may be considered necessary in the interest of the work or as may be required under any circular or instruction issued by the competent authority.
+
+8.10.5 USER UPLOADS
+
+Note: Specific circulars, notifications, or amendments applicable to this tender may be uploaded by the user as additional annexures to this chapter.
+
+Status: PENDING USER UPLOADS (Optional)
+
+END OF CHAPTER 08`;
 }
 
 /**
