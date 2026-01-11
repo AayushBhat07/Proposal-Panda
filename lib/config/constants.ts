@@ -44,3 +44,20 @@ export const USER_ROLES = {
   EXECUTIVE: 'Executive',
   EXTERNAL_CONSULTANT: 'ExternalConsultant',
 } as const;
+
+/**
+ * AI Generation Configuration
+ * Local LLM settings for Ollama integration
+ */
+export const AI_CONFIG = {
+  OLLAMA_BASE_URL: 'http://localhost:11434',
+  MODEL_NAME: 'llama3:8b-instruct',
+  TIMEOUT_MS: 40000, // 40 seconds
+  MAX_RETRIES: 1,
+  DEFAULT_INFERENCE: {
+    temperature: 0.2,
+    top_p: 0.9,
+    repeat_penalty: 1.1,
+    max_tokens: 2048,
+  },
+} as const;
