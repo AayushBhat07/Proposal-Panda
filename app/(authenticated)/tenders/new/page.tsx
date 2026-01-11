@@ -1,7 +1,7 @@
 'use client';
 
 import PageContainer from '@/components/layout/PageContainer';
-import Card from '@/components/ui/Card';
+import TenderCreationWizard from '@/features/tender-management/components/TenderCreationWizard';
 
 export default function NewTenderPage() {
   return (
@@ -9,9 +9,7 @@ export default function NewTenderPage() {
       title="Create New Tender" 
       description="Start a new tender submission"
     >
-      <Card variant="bordered">
-        <p className="text-gray-600">Tender creation form will be implemented in Phase 1</p>
-      </Card>
+      <TenderCreationWizard />
     </PageContainer>
   );
 }
