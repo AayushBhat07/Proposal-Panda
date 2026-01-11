@@ -389,13 +389,199 @@ Once uploaded, this chapter will include:
 /**
  * Generate Chapter 07: Additional Specifications (AI_GENERATE)
  * Phase 3C: Enhanced with PWD-style technical realism and execution-level detail
+ * Phase 3D.1: Refactored to use chunked generation to avoid timeout
  */
 async function generateChapter07(inputForm: TenderInputForm): Promise<ChapterGenerationResult> {
   const { nameOfWork, state } = inputForm;
   
-  const systemPrompt = `${GLOBAL_SYSTEM_PROMPT}
+  // Define subsections to generate separately
+  const subsections = [
+    {
+      number: '7.1',
+      title: 'GENERAL',
+      topics: [
+        'Scope of additional specifications',
+        'Relationship to other contract documents',
+        'Contractor\'s responsibility for compliance',
+        'Engineer-in-Charge authority and approval requirements',
+        'Definition of "approved quality" and "as directed"'
+      ]
+    },
+    {
+      number: '7.2',
+      title: 'MATERIALS',
+      topics: [
+        'General requirements for all materials',
+        'Source approval procedures',
+        'Quality standards and conformance requirements',
+        'Substitution and alternative materials policy',
+        'Contractor\'s responsibility for material quality',
+        'Storage and handling requirements'
+      ]
+    },
+    {
+      number: '7.3',
+      title: 'WORKMANSHIP',
+      topics: [
+        'General workmanship standards',
+        'Skilled labor requirements',
+        'Supervision and quality control by contractor',
+        'Rejection and re-execution of defective work',
+        'Rates deemed inclusive of proper workmanship'
+      ]
+    },
+    {
+      number: '7.4',
+      title: 'CEMENT',
+      topics: [
+        'Types of cement approved for use (reference relevant IS specifications)',
+        'Quality requirements and testing',
+        'Storage conditions and shelf life',
+        'Handling and protection from moisture',
+        'Rejected cement disposal'
+      ]
+    },
+    {
+      number: '7.5',
+      title: 'AGGREGATES',
+      topics: [
+        'Coarse and fine aggregates specifications',
+        'Quality requirements (reference relevant standards)',
+        'Gradation, strength, and durability requirements',
+        'Testing procedures and frequency',
+        'Source approval and contractor\'s arrangements'
+      ]
+    },
+    {
+      number: '7.6',
+      title: 'REINFORCEMENT STEEL',
+      topics: [
+        'Types and grades of steel permitted',
+        'Quality conformance (reference applicable standards)',
+        'Storage, cutting, bending, and placement',
+        'Cover requirements and tolerances',
+        'Inspection and approval before concreting'
+      ]
+    },
+    {
+      number: '7.7',
+      title: 'CONCRETE MIXING & PLACING',
+      topics: [
+        'Mixing procedures and equipment',
+        'Water-cement ratio control',
+        'Transportation and placement methods',
+        'Compaction and vibration requirements',
+        'Hot and cold weather concreting precautions',
+        'Rates inclusive of all mixing and placing operations'
+      ]
+    },
+    {
+      number: '7.8',
+      title: 'FORMWORK & CENTERING',
+      topics: [
+        'Design and construction of formwork',
+        'Material specifications for formwork',
+        'Alignment, level, and dimensional tolerances',
+        'Removal procedures and timing',
+        'Contractor\'s responsibility for formwork design adequacy'
+      ]
+    },
+    {
+      number: '7.9',
+      title: 'CURING OF CONCRETE',
+      topics: [
+        'Curing methods and duration',
+        'Water requirements for curing',
+        'Protection against premature drying',
+        'Special curing for different structural elements',
+        'No extra payment for curing arrangements'
+      ]
+    },
+    {
+      number: '7.10',
+      title: 'MEASUREMENTS & TOLERANCES',
+      topics: [
+        'Permissible dimensional tolerances',
+        'Measurement procedures for payment',
+        'Level and alignment verification',
+        'Rectification of out-of-tolerance work',
+        'Final measurements subject to Engineer-in-Charge approval'
+      ]
+    },
+    {
+      number: '7.11',
+      title: 'QUALITY CONTROL & TESTING',
+      topics: [
+        'Testing frequency and procedures',
+        'Cube testing, material testing requirements',
+        'Contractor\'s responsibility for testing arrangements',
+        'Testing at approved laboratories',
+        'Acceptance criteria and rejection procedures',
+        'Cost of all testing borne by contractor'
+      ]
+    },
+    {
+      number: '7.12',
+      title: 'SAFETY PROVISIONS',
+      topics: [
+        'Site safety management requirements',
+        'Personal protective equipment requirements',
+        'Scaffolding and temporary works safety',
+        'Safety signage and barriers',
+        'Contractor\'s responsibility for all safety measures',
+        'Compliance with applicable safety regulations'
+      ]
+    },
+    {
+      number: '7.13',
+      title: 'SITE CLEARANCE & HOUSEKEEPING',
+      topics: [
+        'Daily site cleaning requirements',
+        'Disposal of construction waste',
+        'Debris removal and site tidiness',
+        'Final site clearance before handover',
+        'Rates include all clearance and housekeeping'
+      ]
+    },
+    {
+      number: '7.14',
+      title: 'STACKING & STORAGE OF MATERIALS',
+      topics: [
+        'Proper stacking and storage requirements',
+        'Protection from weather and damage',
+        'Organized material yard maintenance',
+        'Security arrangements by contractor',
+        'Damaged materials replacement at contractor\'s cost'
+      ]
+    },
+    {
+      number: '7.15',
+      title: 'WATER SUPPLY & POWER',
+      topics: [
+        'Contractor\'s arrangements for water supply',
+        'Power supply and temporary connections',
+        'Costs deemed included in rates',
+        'Approval requirements for connections',
+        'Conservation and responsible usage'
+      ]
+    },
+    {
+      number: '7.16',
+      title: 'RESPONSIBILITY OF CONTRACTOR',
+      topics: [
+        'Overall responsibility for specification compliance',
+        'Liability for defective work and materials',
+        'Rectification at contractor\'s cost',
+        'No extra claims for specification compliance',
+        'Finality of Engineer-in-Charge decisions',
+        'Deemed knowledge of site conditions and specifications'
+      ]
+    }
+  ];
 
-You are generating Chapter 07: Additional Specifications for a Maharashtra Public Works Department (PWD) infrastructure tender.
+  const baseSystemPrompt = `${GLOBAL_SYSTEM_PROMPT}
+
+You are generating a subsection of Chapter 07: Additional Specifications for a Maharashtra Public Works Department (PWD) infrastructure tender.
 
 CRITICAL TONE AND LANGUAGE REQUIREMENTS:
 - Use formal, conservative, execution-focused language
@@ -418,193 +604,65 @@ TECHNICAL REALISM GUARDRAILS:
 - DO NOT mention brand names or proprietary products
 - Keep technical details realistic and execution-focused
 - Avoid overly precise numbers unless standard practice
-- Focus on HOW work will be done, not theoretical concepts
+- Focus on HOW work will be done, not theoretical concepts`;
 
-STRUCTURE REQUIREMENTS:
-- Generate comprehensive subsections covering all execution aspects
-- Each subsection must be 1-2 solid paragraphs minimum
-- Total content should be substantial (multi-page in final document)
-- Use numbered sections (7.1, 7.2, etc.)
-- Include exhaustive coverage even if repetitive
+  // Generate each subsection separately
+  const subsectionContents: string[] = [];
+  let totalTokens = 0;
+  let totalTime = 0;
 
-REQUIRED SUBSECTIONS (must cover all):
-1. General
-2. Materials
-3. Workmanship
-4. Cement
-5. Aggregates
-6. Reinforcement Steel
-7. Concrete Mixing & Placing
-8. Formwork & Centering
-9. Curing of Concrete
-10. Measurements & Tolerances
-11. Quality Control & Testing
-12. Safety Provisions
-13. Site Clearance & Housekeeping
-14. Stacking & Storage of Materials
-15. Water Supply & Power
-16. Responsibility of Contractor
-
-You may adjust subsection names slightly but must maintain comprehensive technical coverage.`;
-
-  const userPrompt = `Generate Chapter 07: Additional Specifications for the following Maharashtra PWD infrastructure project:
+  for (const subsection of subsections) {
+    const topicList = subsection.topics.map(t => `- ${t}`).join('\n');
+    
+    const userPrompt = `Generate section ${subsection.number} ${subsection.title} for Chapter 07: Additional Specifications.
 
 Project: ${nameOfWork}
 State: ${state}
 
-Generate COMPREHENSIVE, EXECUTION-FOCUSED specifications organized into the following subsections:
-
-7.1 GENERAL
-- Scope of additional specifications
-- Relationship to other contract documents
-- Contractor's responsibility for compliance
-- Engineer-in-Charge authority and approval requirements
-- Definition of "approved quality" and "as directed"
-
-7.2 MATERIALS
-- General requirements for all materials
-- Source approval procedures
-- Quality standards and conformance requirements
-- Substitution and alternative materials policy
-- Contractor's responsibility for material quality
-- Storage and handling requirements
-
-7.3 WORKMANSHIP
-- General workmanship standards
-- Skilled labor requirements
-- Supervision and quality control by contractor
-- Rejection and re-execution of defective work
-- Rates deemed inclusive of proper workmanship
-
-7.4 CEMENT
-- Types of cement approved for use (reference relevant IS specifications)
-- Quality requirements and testing
-- Storage conditions and shelf life
-- Handling and protection from moisture
-- Rejected cement disposal
-
-7.5 AGGREGATES
-- Coarse and fine aggregates specifications
-- Quality requirements (reference relevant standards)
-- Gradation, strength, and durability requirements
-- Testing procedures and frequency
-- Source approval and contractor's arrangements
-
-7.6 REINFORCEMENT STEEL
-- Types and grades of steel permitted
-- Quality conformance (reference applicable standards)
-- Storage, cutting, bending, and placement
-- Cover requirements and tolerances
-- Inspection and approval before concreting
-
-7.7 CONCRETE MIXING & PLACING
-- Mixing procedures and equipment
-- Water-cement ratio control
-- Transportation and placement methods
-- Compaction and vibration requirements
-- Hot and cold weather concreting precautions
-- Rates inclusive of all mixing and placing operations
-
-7.8 FORMWORK & CENTERING
-- Design and construction of formwork
-- Material specifications for formwork
-- Alignment, level, and dimensional tolerances
-- Removal procedures and timing
-- Contractor's responsibility for formwork design adequacy
-
-7.9 CURING OF CONCRETE
-- Curing methods and duration
-- Water requirements for curing
-- Protection against premature drying
-- Special curing for different structural elements
-- No extra payment for curing arrangements
-
-7.10 MEASUREMENTS & TOLERANCES
-- Permissible dimensional tolerances
-- Measurement procedures for payment
-- Level and alignment verification
-- Rectification of out-of-tolerance work
-- Final measurements subject to Engineer-in-Charge approval
-
-7.11 QUALITY CONTROL & TESTING
-- Testing frequency and procedures
-- Cube testing, material testing requirements
-- Contractor's responsibility for testing arrangements
-- Testing at approved laboratories
-- Acceptance criteria and rejection procedures
-- Cost of all testing borne by contractor
-
-7.12 SAFETY PROVISIONS
-- Site safety management requirements
-- Personal protective equipment requirements
-- Scaffolding and temporary works safety
-- Safety signage and barriers
-- Contractor's responsibility for all safety measures
-- Compliance with applicable safety regulations
-
-7.13 SITE CLEARANCE & HOUSEKEEPING
-- Daily site cleaning requirements
-- Disposal of construction waste
-- Debris removal and site tidiness
-- Final site clearance before handover
-- Rates include all clearance and housekeeping
-
-7.14 STACKING & STORAGE OF MATERIALS
-- Proper stacking and storage requirements
-- Protection from weather and damage
-- Organized material yard maintenance
-- Security arrangements by contractor
-- Damaged materials replacement at contractor's cost
-
-7.15 WATER SUPPLY & POWER
-- Contractor's arrangements for water supply
-- Power supply and temporary connections
-- Costs deemed included in rates
-- Approval requirements for connections
-- Conservation and responsible usage
-
-7.16 RESPONSIBILITY OF CONTRACTOR
-- Overall responsibility for specification compliance
-- Liability for defective work and materials
-- Rectification at contractor's cost
-- No extra claims for specification compliance
-- Finality of Engineer-in-Charge decisions
-- Deemed knowledge of site conditions and specifications
+Cover the following topics comprehensively:
+${topicList}
 
 IMPORTANT FORMATTING:
-- Number each section clearly (7.1, 7.2, 7.3, etc.)
-- Write in formal, directive, repetitive PWD style
-- Each section must be comprehensive (1-2+ paragraphs)
+- Start with "${subsection.number} ${subsection.title}"
+- Write 1-2 solid paragraphs of formal, directive PWD-style content
 - Use conservative technical language
 - Include execution-level instructions
 - Emphasize contractor responsibilities and "no extra payment" clauses
 - Sound boring and bureaucratic (this is correct)
 
-Do NOT include chapter heading ("CHAPTER 07") - I will add that. Start directly with section 7.1.`;
+Generate ONLY this section. Do NOT include chapter heading.`;
 
-  const result = await generateWithLlmSafe({
-    systemPrompt,
-    userPrompt,
-    inferenceOptions: {
-      temperature: 0.15,  // Lower temperature for more formal, consistent output
-      top_p: 0.85,        // Lower for conservative language
-      repeat_penalty: 1.05, // Lower penalty - we WANT repetitive PWD phrasing
-      max_tokens: 4096,   // Increased for comprehensive multi-section content
-    },
-  });
+    const result = await generateWithLlmSafe({
+      systemPrompt: baseSystemPrompt,
+      userPrompt,
+      inferenceOptions: {
+        temperature: 0.15,
+        top_p: 0.85,
+        repeat_penalty: 1.05,
+        max_tokens: 512,  // Smaller token limit per subsection
+      },
+    });
 
-  if (!result.success) {
-    return {
-      success: false,
-      error: result.error.message,
-    };
+    if (!result.success) {
+      return {
+        success: false,
+        error: `Failed to generate subsection ${subsection.number}: ${result.error.message}`,
+      };
+    }
+
+    subsectionContents.push(result.data.content);
+    totalTokens += result.data.tokenCount || 0;
+    totalTime += result.data.responseTimeMs || 0;
   }
+
+  // Concatenate all subsections
+  const fullContent = subsectionContents.join('\n\n');
 
   return {
     success: true,
-    content: `CHAPTER 07: ADDITIONAL SPECIFICATIONS\n\n${result.data.content}`,
-    tokenCount: result.data.tokenCount,
-    responseTimeMs: result.data.responseTimeMs,
+    content: `CHAPTER 07: ADDITIONAL SPECIFICATIONS\n\n${fullContent}`,
+    tokenCount: totalTokens,
+    responseTimeMs: totalTime,
   };
 }
 
