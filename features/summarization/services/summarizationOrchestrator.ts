@@ -1,0 +1,233 @@
+/**
+ * PHASE 4A: Tender Summarization Orchestrator
+ * Main entry point for post-generation summarization
+ */
+
+import type {
+  TenderDocumentInput,
+  TenderSummary,
+  SummarizationOptions,
+  SummarizationResult,
+} from '../types/summarization.types';
+import { BARTSummarizationService } from './bartService';
+import { extractTextFromDocx, extractTextFromPlainText, extractChapters, cleanText } from './textExtractor';
+import * as fs from 'fs';
+import * as path from 'path';
+
+/**
+ * Summarize tender from file
+ * Supports .txt, .md, and .docx (future)
+ */
+export async function summarizeTenderFromFile(
+  filePath: string,
+  tenderId: string,
+  tenderTitle: string,
+  options: SummarizationOptions = {}
+): Promise<SummarizationResult> {
+  console.log(`📊 Starting summarization for: ${tenderTitle}`);
+  console.log(`   File: ${filePath}\n`);
+
+  // Extract text
+  const ext = path.extname(filePath).toLowerCase();
+  let fullText: string;
+
+  if (ext === '.docx') {
+    fullText = await extractTextFromDocx(filePath);
+  } else if (ext === '.txt' || ext === '.md') {
+    fullText = extractTextFromPlainText(filePath);
+  } else {
+    throw new Error(`Unsupported file format: ${ext}`);
+  }
+
+  // Clean text
+  fullText = cleanText(fullText);
+
+  // Extract chapters
+  const chapters = extractChapters(fullText);
+  console.log(`   Extracted ${chapters.length} chapters\n`);
+
+  // Create input
+  const input: TenderDocumentInput = {
+    fullText,
+    chapters: chapters.length > 1 ? chapters : undefined,
+    tenderId,
+    tenderTitle,
+  };
+
+  // Summarize
+  const service = new BARTSummarizationService(options);
+  const result = await service.summarizeTender(input, options);
+
+  console.log(`✅ Summarization complete!`);
+  console.log(`   Chunks processed: ${result.diagnostics.chunksProcessed}`);
+  console.log(`   Processing time: ${result.diagnostics.processingTimeMs}ms\n`);
+
+  return result;
+}
+
+/**
+ * Summarize tender from text string
+ */
+export async function summarizeTenderFromText(
+  fullText: string,
+  tenderId: string,
+  tenderTitle: string,
+  options: SummarizationOptions = {}
+): Promise<SummarizationResult> {
+  const cleanedText = cleanText(fullText);
+  const chapters = extractChapters(cleanedText);
+
+  const input: TenderDocumentInput = {
+    fullText: cleanedText,
+    chapters: chapters.length > 1 ? chapters : undefined,
+    tenderId,
+    tenderTitle,
+  };
+
+  const service = new BARTSummarizationService(options);
+  return await service.summarizeTender(input, options);
+}
+
+/**
+ * Export summary to JSON file
+ */
+export function exportSummaryToJSON(summary: TenderSummary, outputPath: string): void {
+  const json = JSON.stringify(summary, null, 2);
+  fs.writeFileSync(outputPath, json, 'utf-8');
+  console.log(`✓ Summary exported to: ${outputPath}`);
+}
+
+/**
+ * Export summary to Markdown file (human-readable)
+ */
+export function exportSummaryToMarkdown(summary: TenderSummary, outputPath: string): void {
+  const md = formatSummaryAsMarkdown(summary);
+  fs.writeFileSync(outputPath, md, 'utf-8');
+  console.log(`✓ Summary exported to: ${outputPath}`);
+}
+
+/**
+ * Format summary as human-readable Markdown
+ */
+function formatSummaryAsMarkdown(summary: TenderSummary): string {
+  return `# Tender Summary: ${summary.metadata.tenderTitle}
+
+**Tender ID:** ${summary.metadata.tenderId}  
+**Generated:** ${summary.metadata.generatedAt.toLocaleString()}  
+**Model:** ${summary.metadata.modelUsed}  
+**Chunks Processed:** ${summary.metadata.totalChunks}  
+**Processing Time:** ${summary.metadata.processingTimeMs}ms
+
+---
+
+## Executive Summary
+
+${summary.executiveSummary}
+
+---
+
+## Key Commercial Terms
+
+${summary.commercialTerms}
+
+---
+
+## Important Dates & Obligations
+
+${summary.datesAndObligations}
+
+---
+
+## Technical Scope Overview
+
+${summary.technicalScope}
+
+---
+
+## Legal & Contractual Highlights
+
+${summary.legalHighlights}
+
+---
+
+## Risks & Attention Points (Factual)
+
+${summary.attentionPoints}
+
+---
+
+*This summary was generated using BART-based abstractive summarization. All information is extracted directly from the tender document without interpretation or judgment.*
+`;
+}
+
+/**
+ * Export summary to plain text file
+ */
+export function exportSummaryToText(summary: TenderSummary, outputPath: string): void {
+  const text = formatSummaryAsText(summary);
+  fs.writeFileSync(outputPath, text, 'utf-8');
+  console.log(`✓ Summary exported to: ${outputPath}`);
+}
+
+/**
+ * Format summary as plain text
+ */
+function formatSummaryAsText(summary: TenderSummary): string {
+  return `TENDER SUMMARY: ${summary.metadata.tenderTitle}
+${'='.repeat(80)}
+
+Tender ID: ${summary.metadata.tenderId}
+Generated: ${summary.metadata.generatedAt.toLocaleString()}
+Model: ${summary.metadata.modelUsed}
+Chunks Processed: ${summary.metadata.totalChunks}
+Processing Time: ${summary.metadata.processingTimeMs}ms
+
+${'-'.repeat(80)}
+
+EXECUTIVE SUMMARY
+${'-'.repeat(80)}
+
+${summary.executiveSummary}
+
+${'-'.repeat(80)}
+
+KEY COMMERCIAL TERMS
+${'-'.repeat(80)}
+
+${summary.commercialTerms}
+
+${'-'.repeat(80)}
+
+IMPORTANT DATES & OBLIGATIONS
+${'-'.repeat(80)}
+
+${summary.datesAndObligations}
+
+${'-'.repeat(80)}
+
+TECHNICAL SCOPE OVERVIEW
+${'-'.repeat(80)}
+
+${summary.technicalScope}
+
+${'-'.repeat(80)}
+
+LEGAL & CONTRACTUAL HIGHLIGHTS
+${'-'.repeat(80)}
+
+${summary.legalHighlights}
+
+${'-'.repeat(80)}
+
+RISKS & ATTENTION POINTS (FACTUAL)
+${'-'.repeat(80)}
+
+${summary.attentionPoints}
+
+${'-'.repeat(80)}
+
+This summary was generated using BART-based abstractive summarization.
+All information is extracted directly from the tender document without
+interpretation or judgment.
+`;
+}
