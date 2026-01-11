@@ -388,47 +388,208 @@ Once uploaded, this chapter will include:
 
 /**
  * Generate Chapter 07: Additional Specifications (AI_GENERATE)
+ * Phase 3C: Enhanced with PWD-style technical realism and execution-level detail
  */
 async function generateChapter07(inputForm: TenderInputForm): Promise<ChapterGenerationResult> {
   const { nameOfWork, state } = inputForm;
   
   const systemPrompt = `${GLOBAL_SYSTEM_PROMPT}
 
-You are generating Chapter 07: Additional Specifications for an Indian infrastructure tender.
+You are generating Chapter 07: Additional Specifications for a Maharashtra Public Works Department (PWD) infrastructure tender.
 
-CRITICAL REQUIREMENTS:
-- Reference IS codes (Indian Standards) where applicable
-- Be aware of MoRTH specifications for road/highway projects
-- Reference CPWD specifications for building works
-- Include material specifications with measurable criteria
-- Specify quality control and testing procedures
-- All specifications must be verifiable`;
+CRITICAL TONE AND LANGUAGE REQUIREMENTS:
+- Use formal, conservative, execution-focused language
+- Write in repetitive, directive PWD style (this is GOOD)
+- Employ passive voice heavily ("The contractor shall...", "All materials shall...")
+- Sound boring and technical (this is the goal)
+- NO marketing language, NO modern buzzwords, NO academic tone
+- Use repetitive formal phrases intentionally:
+  * "The contractor shall make his own arrangements for..."
+  * "All materials used shall be of approved quality and conform to..."
+  * "No extra payment whatsoever shall be made for..."
+  * "Work shall be carried out as directed by the Engineer-in-Charge..."
+  * "Rates quoted shall be deemed to include all..."
+  * "as per relevant IS specifications"
+  * "as per standard PWD practices"
 
-  const userPrompt = `Generate Additional Technical Specifications for:
+TECHNICAL REALISM GUARDRAILS:
+- DO NOT invent specific IS codes unless very common (you may mention IS 456 cautiously)
+- Use safe generic phrases: "as per relevant IS specifications", "as per applicable standards"
+- DO NOT mention brand names or proprietary products
+- Keep technical details realistic and execution-focused
+- Avoid overly precise numbers unless standard practice
+- Focus on HOW work will be done, not theoretical concepts
+
+STRUCTURE REQUIREMENTS:
+- Generate comprehensive subsections covering all execution aspects
+- Each subsection must be 1-2 solid paragraphs minimum
+- Total content should be substantial (multi-page in final document)
+- Use numbered sections (7.1, 7.2, etc.)
+- Include exhaustive coverage even if repetitive
+
+REQUIRED SUBSECTIONS (must cover all):
+1. General
+2. Materials
+3. Workmanship
+4. Cement
+5. Aggregates
+6. Reinforcement Steel
+7. Concrete Mixing & Placing
+8. Formwork & Centering
+9. Curing of Concrete
+10. Measurements & Tolerances
+11. Quality Control & Testing
+12. Safety Provisions
+13. Site Clearance & Housekeeping
+14. Stacking & Storage of Materials
+15. Water Supply & Power
+16. Responsibility of Contractor
+
+You may adjust subsection names slightly but must maintain comprehensive technical coverage.`;
+
+  const userPrompt = `Generate Chapter 07: Additional Specifications for the following Maharashtra PWD infrastructure project:
 
 Project: ${nameOfWork}
 State: ${state}
 
-Include:
-1. Material specifications (with IS codes)
-2. Construction methodology and workmanship standards
-3. Quality control procedures and testing protocols
-4. Equipment and machinery specifications
-5. Environmental compliance requirements
-6. Safety standards and site management
-7. Measurement and payment procedures
+Generate COMPREHENSIVE, EXECUTION-FOCUSED specifications organized into the following subsections:
 
-Reference appropriate IS codes, MoRTH specifications, and CPWD standards.
-Format as Chapter 07 with numbered sections.`;
+7.1 GENERAL
+- Scope of additional specifications
+- Relationship to other contract documents
+- Contractor's responsibility for compliance
+- Engineer-in-Charge authority and approval requirements
+- Definition of "approved quality" and "as directed"
+
+7.2 MATERIALS
+- General requirements for all materials
+- Source approval procedures
+- Quality standards and conformance requirements
+- Substitution and alternative materials policy
+- Contractor's responsibility for material quality
+- Storage and handling requirements
+
+7.3 WORKMANSHIP
+- General workmanship standards
+- Skilled labor requirements
+- Supervision and quality control by contractor
+- Rejection and re-execution of defective work
+- Rates deemed inclusive of proper workmanship
+
+7.4 CEMENT
+- Types of cement approved for use (reference relevant IS specifications)
+- Quality requirements and testing
+- Storage conditions and shelf life
+- Handling and protection from moisture
+- Rejected cement disposal
+
+7.5 AGGREGATES
+- Coarse and fine aggregates specifications
+- Quality requirements (reference relevant standards)
+- Gradation, strength, and durability requirements
+- Testing procedures and frequency
+- Source approval and contractor's arrangements
+
+7.6 REINFORCEMENT STEEL
+- Types and grades of steel permitted
+- Quality conformance (reference applicable standards)
+- Storage, cutting, bending, and placement
+- Cover requirements and tolerances
+- Inspection and approval before concreting
+
+7.7 CONCRETE MIXING & PLACING
+- Mixing procedures and equipment
+- Water-cement ratio control
+- Transportation and placement methods
+- Compaction and vibration requirements
+- Hot and cold weather concreting precautions
+- Rates inclusive of all mixing and placing operations
+
+7.8 FORMWORK & CENTERING
+- Design and construction of formwork
+- Material specifications for formwork
+- Alignment, level, and dimensional tolerances
+- Removal procedures and timing
+- Contractor's responsibility for formwork design adequacy
+
+7.9 CURING OF CONCRETE
+- Curing methods and duration
+- Water requirements for curing
+- Protection against premature drying
+- Special curing for different structural elements
+- No extra payment for curing arrangements
+
+7.10 MEASUREMENTS & TOLERANCES
+- Permissible dimensional tolerances
+- Measurement procedures for payment
+- Level and alignment verification
+- Rectification of out-of-tolerance work
+- Final measurements subject to Engineer-in-Charge approval
+
+7.11 QUALITY CONTROL & TESTING
+- Testing frequency and procedures
+- Cube testing, material testing requirements
+- Contractor's responsibility for testing arrangements
+- Testing at approved laboratories
+- Acceptance criteria and rejection procedures
+- Cost of all testing borne by contractor
+
+7.12 SAFETY PROVISIONS
+- Site safety management requirements
+- Personal protective equipment requirements
+- Scaffolding and temporary works safety
+- Safety signage and barriers
+- Contractor's responsibility for all safety measures
+- Compliance with applicable safety regulations
+
+7.13 SITE CLEARANCE & HOUSEKEEPING
+- Daily site cleaning requirements
+- Disposal of construction waste
+- Debris removal and site tidiness
+- Final site clearance before handover
+- Rates include all clearance and housekeeping
+
+7.14 STACKING & STORAGE OF MATERIALS
+- Proper stacking and storage requirements
+- Protection from weather and damage
+- Organized material yard maintenance
+- Security arrangements by contractor
+- Damaged materials replacement at contractor's cost
+
+7.15 WATER SUPPLY & POWER
+- Contractor's arrangements for water supply
+- Power supply and temporary connections
+- Costs deemed included in rates
+- Approval requirements for connections
+- Conservation and responsible usage
+
+7.16 RESPONSIBILITY OF CONTRACTOR
+- Overall responsibility for specification compliance
+- Liability for defective work and materials
+- Rectification at contractor's cost
+- No extra claims for specification compliance
+- Finality of Engineer-in-Charge decisions
+- Deemed knowledge of site conditions and specifications
+
+IMPORTANT FORMATTING:
+- Number each section clearly (7.1, 7.2, 7.3, etc.)
+- Write in formal, directive, repetitive PWD style
+- Each section must be comprehensive (1-2+ paragraphs)
+- Use conservative technical language
+- Include execution-level instructions
+- Emphasize contractor responsibilities and "no extra payment" clauses
+- Sound boring and bureaucratic (this is correct)
+
+Do NOT include chapter heading ("CHAPTER 07") - I will add that. Start directly with section 7.1.`;
 
   const result = await generateWithLlmSafe({
     systemPrompt,
     userPrompt,
     inferenceOptions: {
-      temperature: 0.25,
-      top_p: 0.9,
-      repeat_penalty: 1.1,
-      max_tokens: 2048,
+      temperature: 0.15,  // Lower temperature for more formal, consistent output
+      top_p: 0.85,        // Lower for conservative language
+      repeat_penalty: 1.05, // Lower penalty - we WANT repetitive PWD phrasing
+      max_tokens: 4096,   // Increased for comprehensive multi-section content
     },
   });
 
