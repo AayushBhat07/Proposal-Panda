@@ -1,11 +1,12 @@
 'use client';
 
 /**
- * Phase 5A: Onboarding Page
+ * Phase 5B: Onboarding Page
  * Multi-step onboarding flow
+ * Enhanced with state restoration and navigation safety
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import OnboardingLayout from '@/components/onboarding/OnboardingLayout';
@@ -15,9 +16,25 @@ import OnboardingSummary from '@/components/onboarding/OnboardingSummary';
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { companyProfile, selectedRole, setCompanyProfile, setSelectedRole, completeOnboarding } =
+  const { companyProfile, selectedRole, isComplete, setCompanyProfile, setSelectedRole, completeOnboarding } =
     useOnboarding();
   const [step, setStep] = useState<1 | 2 | 3>(1);
+
+  // Check if already completed
+  useEffect(() => {
+    if (isComplete) {
+      router.push('/dashboard');
+    }
+  }, [isComplete, router]);
+
+  // Restore step based on saved state
+  useEffect(() => {
+    if (companyProfile && !selectedRole) {
+      setStep(2);
+    } else if (companyProfile && selectedRole) {
+      setStep(3);
+    }
+  }, [companyProfile, selectedRole]);
 
   const handleCompanyInfoNext = (profile: typeof companyProfile) => {
     setCompanyProfile(profile!);
@@ -31,7 +48,10 @@ export default function OnboardingPage() {
 
   const handleComplete = () => {
     completeOnboarding();
-    router.push('/dashboard');
+    // Small delay to ensure localStorage is updated
+    setTimeout(() => {
+      router.push('/dashboard');
+    }, 100);
   };
 
   const handleBack = () => {

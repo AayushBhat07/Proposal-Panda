@@ -3,10 +3,11 @@
 /**
  * Phase 5B: Tender Analysis Page
  * Main analysis view with tabs
- * Enhanced with loading and error states
+ * Enhanced with loading, error states, and localStorage persistence
  */
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import AnalysisTabs from '@/components/analysis/AnalysisTabs';
 import SummaryPanel from '@/components/analysis/SummaryPanel';
 import CompliancePanel from '@/components/analysis/CompliancePanel';
@@ -15,39 +16,68 @@ import BOQInsightsPanel from '@/components/analysis/BOQInsightsPanel';
 import MetadataPanel from '@/components/analysis/MetadataPanel';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
-
-// TODO: Replace with actual Phase 4C API call
-import { MOCK_INTELLIGENCE_REPORT } from '@/lib/mock/mockIntelligenceReport';
+import { getFromLocalStorage } from '@/services/storage/mockStorageService';
+import type { IntelligenceReport } from '@/features/intelligence-orchestrator/types/orchestration.types';
 
 export default function TenderAnalysisPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('summary');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [report, setReport] = useState<IntelligenceReport | null>(null);
   
-  // TODO: Fetch real data using params.id
-  const report = MOCK_INTELLIGENCE_REPORT;
-
-  // Simulate loading analysis data
+  // Load analysis data from localStorage
   useEffect(() => {
     const loadAnalysis = async () => {
       setIsLoading(true);
       setError(null);
+      
       try {
-        // TODO: Replace with actual API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        // Try to load from localStorage
+        const storedReport = getFromLocalStorage<any>('intelligenceReports', params.id);
+        
+        if (!storedReport) {
+          setError('Analysis not found. This tender may have been deleted or never processed.');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Extract the report structure (remove id, fileName, uploadedAt)
+        const { id, fileName, uploadedAt, ...reportData } = storedReport;
+        setReport(reportData as IntelligenceReport);
         setIsLoading(false);
       } catch (err) {
+        console.error('Error loading analysis:', err);
         setError('Failed to load analysis data. Please try again.');
         setIsLoading(false);
       }
     };
+    
     loadAnalysis();
   }, [params.id]);
 
   const handleRetry = () => {
     setIsLoading(true);
     setError(null);
-    setTimeout(() => setIsLoading(false), 1000);
+    
+    setTimeout(() => {
+      const storedReport = getFromLocalStorage<any>('intelligenceReports', params.id);
+      if (storedReport) {
+        const { id, fileName, uploadedAt, ...reportData } = storedReport;
+        setReport(reportData as IntelligenceReport);
+        setError(null);
+      } else {
+        setError('Analysis not found. This tender may have been deleted or never processed.');
+      }
+      setIsLoading(false);
+    }, 500);
+  };
+
+  const handleBackToDashboard = () => {
+    router.push('/dashboard');
   };
 
   // Loading state
@@ -87,13 +117,30 @@ export default function TenderAnalysisPage({ params }: { params: { id: string } 
             </div>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Unable to Load Analysis</h2>
             <p className="text-gray-600 mb-6">{error}</p>
-            <Button onClick={handleRetry} className="bg-amber-900 text-white hover:bg-amber-800">
-              Try Again
-            </Button>
+            <div className="flex gap-3 justify-center">
+              <Button 
+                onClick={handleBackToDashboard} 
+                variant="outline"
+                className="border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Back to Dashboard
+              </Button>
+              <Button 
+                onClick={handleRetry} 
+                className="bg-amber-900 text-white hover:bg-amber-800"
+              >
+                Try Again
+              </Button>
+            </div>
           </div>
         </div>
       </div>
     );
+  }
+
+  // No report loaded
+  if (!report) {
+    return null;
   }
 
   return (
@@ -104,15 +151,19 @@ export default function TenderAnalysisPage({ params }: { params: { id: string } 
           <div>
             <div className="flex items-center gap-3 mb-2">
               <span className="text-2xl font-bold text-gray-900">{params.id}</span>
-              <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-medium rounded">
-                Moderate Risk
+              <span className={`px-2 py-1 text-xs font-medium rounded ${
+                report.compliance.riskLevel === 'Low' ? 'bg-green-100 text-green-700' :
+                report.compliance.riskLevel === 'Medium' ? 'bg-orange-100 text-orange-700' :
+                'bg-red-100 text-red-700'
+              }`}>
+                {report.compliance.riskLevel} Risk
               </span>
             </div>
             <h1 className="text-xl font-semibold text-gray-900 mb-1">
-              Compliance Analysis: State Highway 14 Reconstruction
+              {report.summary.metadata.tenderTitle}
             </h1>
             <p className="text-sm text-gray-600">
-              Reconstruction of State Highway 14 (Nagpur District) | Last updated: 2 hours ago
+              Compliance Analysis | Last updated: {new Date(report.metadata.generatedAt).toLocaleString()}
             </p>
           </div>
           <div className="flex items-center gap-3">

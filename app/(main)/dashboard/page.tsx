@@ -3,7 +3,7 @@
 /**
  * Phase 5B: Dashboard Page
  * Main dashboard with upload, intelligence snapshot, and activity
- * Enhanced with loading, empty, and error states
+ * Enhanced with loading, empty, error states, and state persistence
  */
 
 import { useState, useEffect } from 'react';
@@ -13,6 +13,8 @@ import DashboardCard from '@/components/dashboard/DashboardCard';
 import TenderUpload from '@/components/dashboard/TenderUpload';
 import ProcessingState from '@/components/dashboard/ProcessingState';
 import Spinner from '@/components/ui/Spinner';
+import { saveToLocalStorage, getFromLocalStorage } from '@/services/storage/mockStorageService';
+import { MOCK_INTELLIGENCE_REPORT } from '@/lib/mock/mockIntelligenceReport';
 
 type UploadState = 'idle' | 'processing' | 'success' | 'error';
 type ProcessingStage = 'analyzing' | 'scoring' | 'finalizing';
@@ -27,13 +29,16 @@ export default function DashboardPage() {
   const [hasActivityData, setHasActivityData] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Simulate loading dashboard data
+  // Load dashboard data from localStorage
   useEffect(() => {
     const loadDashboardData = async () => {
       setIsLoadingData(true);
       await new Promise(resolve => setTimeout(resolve, 800));
+      
       // Check if user has any tender activity
-      setHasActivityData(true); // In real app, check actual data
+      const reports = getFromLocalStorage<any[]>('intelligenceReports');
+      setHasActivityData(Array.isArray(reports) && reports.length > 0);
+      
       setIsLoadingData(false);
     };
     loadDashboardData();
@@ -46,23 +51,57 @@ export default function DashboardPage() {
       setProcessingStage('analyzing');
       setErrorMessage(null);
 
-      // TODO: Replace with real pipeline call
-      // Simulate processing stages
+      // Generate unique tender ID
+      const tenderId = `TENDER-${Date.now()}`;
+      const tenderTitle = file.name.replace(/\.(pdf|docx)$/i, '');
+
+      // Simulate file upload delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      setProcessingStage('analyzing');
       await new Promise(resolve => setTimeout(resolve, 1500));
+
       setProcessingStage('scoring');
       await new Promise(resolve => setTimeout(resolve, 1500));
+
       setProcessingStage('finalizing');
       await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Use mock intelligence report with custom ID and metadata
+      const reportWithId = {
+        id: tenderId,
+        fileName: file.name,
+        uploadedAt: new Date().toISOString(),
+        ...MOCK_INTELLIGENCE_REPORT,
+        summary: {
+          ...MOCK_INTELLIGENCE_REPORT.summary,
+          metadata: {
+            ...MOCK_INTELLIGENCE_REPORT.summary.metadata,
+            tenderId,
+            tenderTitle,
+          },
+        },
+      };
+      
+      saveToLocalStorage('intelligenceReports', reportWithId);
+
+      // Store latest tender ID
+      localStorage.setItem('tender-app-latestTenderId', tenderId);
 
       setUploadState('success');
       
       // Redirect to analysis view
       setTimeout(() => {
-        router.push('/tenders/mock-tender-id/analysis');
+        router.push(`/tenders/${tenderId}/analysis`);
       }, 1500);
     } catch (error) {
+      console.error('Processing error:', error);
       setUploadState('error');
-      setErrorMessage('Failed to process tender document. Please try again.');
+      setErrorMessage(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to process tender document. Please try again.'
+      );
     }
   };
 
@@ -131,50 +170,7 @@ export default function DashboardPage() {
               <p className="text-sm text-gray-600 mt-4">Loading insights...</p>
             </div>
           ) : hasActivityData ? (
-            <div className="space-y-4">
-              <div className="text-center">
-                <div className="text-xs text-gray-500 mb-2">LATEST ANALYSIS</div>
-                <div className="text-sm font-medium text-gray-900">NH-66 Expansion (Panvel-Inda...)</div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center">
-                  <div className="relative inline-flex items-center justify-center w-20 h-20 mb-2">
-                    <svg className="w-20 h-20 transform -rotate-90">
-                      <circle
-                        cx="40"
-                        cy="40"
-                        r="32"
-                        stroke="currentColor"
-                        strokeWidth="8"
-                        fill="none"
-                        className="text-gray-200"
-                      />
-                      <circle
-                        cx="40"
-                        cy="40"
-                        r="32"
-                        stroke="currentColor"
-                        strokeWidth="8"
-                        fill="none"
-                        strokeDasharray="201"
-                        strokeDashoffset="30"
-                        className="text-green-500"
-                      />
-                    </svg>
-                    <div className="absolute text-xl font-bold text-gray-900">85%</div>
-                  </div>
-                  <div className="text-xs text-gray-600">Compliance</div>
-                  <div className="text-xs text-green-600 font-medium">Strong</div>
-                </div>
-                <div className="text-center">
-                  <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <span className="text-3xl">⚠️</span>
-                  </div>
-                  <div className="text-xs text-gray-600">Risk Level</div>
-                  <div className="text-xs text-orange-600 font-medium">Medium</div>
-                </div>
-              </div>
-            </div>
+            <IntelligenceSnapshot />
           ) : (
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -265,10 +261,15 @@ interface TenderActivityRowProps {
 }
 
 function TenderActivityRow({ id, name, division, date, status, statusColor }: TenderActivityRowProps) {
+  const router = useRouter();
   const statusColors = {
     green: 'bg-green-100 text-green-700',
     orange: 'bg-orange-100 text-orange-700',
     gray: 'bg-gray-100 text-gray-700',
+  };
+
+  const handleView = () => {
+    router.push(`/tenders/${id}/analysis`);
   };
 
   return (
@@ -290,9 +291,104 @@ function TenderActivityRow({ id, name, division, date, status, statusColor }: Te
         </span>
       </td>
       <td className="py-3">
-        <button className="text-gray-600 hover:text-gray-900">👁️</button>
+        <button 
+          onClick={handleView}
+          className="text-gray-600 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-900 focus:ring-offset-2 rounded"
+          aria-label={`View tender ${id}`}
+        >
+          👁️
+        </button>
       </td>
     </tr>
+  );
+}
+
+// Intelligence Snapshot Component
+function IntelligenceSnapshot() {
+  const [latestReport, setLatestReport] = useState<any>(null);
+
+  useEffect(() => {
+    const reports = getFromLocalStorage<any[]>('intelligenceReports');
+    if (reports && reports.length > 0) {
+      // Get most recent report
+      const sorted = reports.sort((a, b) => 
+        new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+      );
+      setLatestReport(sorted[0]);
+    }
+  }, []);
+
+  if (!latestReport) return null;
+
+  const complianceScore = latestReport.compliance?.complianceScore || 0;
+  const riskLevel = latestReport.compliance?.riskLevel || 'Unknown';
+  const tenderTitle = latestReport.summary?.metadata?.tenderTitle || latestReport.fileName || 'Untitled Tender';
+  
+  // Calculate circle stroke offset (circumference = 2πr, r=32 → ~201)
+  const circumference = 201;
+  const offset = circumference - (circumference * complianceScore) / 100;
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return 'text-green-500';
+    if (score >= 60) return 'text-orange-500';
+    return 'text-red-500';
+  };
+
+  const getScoreLabel = (score: number) => {
+    if (score >= 80) return 'Strong';
+    if (score >= 60) return 'Moderate';
+    return 'Weak';
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="text-center">
+        <div className="text-xs text-gray-500 mb-2">LATEST ANALYSIS</div>
+        <div className="text-sm font-medium text-gray-900 truncate" title={tenderTitle}>
+          {tenderTitle.length > 35 ? `${tenderTitle.substring(0, 35)}...` : tenderTitle}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="text-center">
+          <div className="relative inline-flex items-center justify-center w-20 h-20 mb-2">
+            <svg className="w-20 h-20 transform -rotate-90">
+              <circle
+                cx="40"
+                cy="40"
+                r="32"
+                stroke="currentColor"
+                strokeWidth="8"
+                fill="none"
+                className="text-gray-200"
+              />
+              <circle
+                cx="40"
+                cy="40"
+                r="32"
+                stroke="currentColor"
+                strokeWidth="8"
+                fill="none"
+                strokeDasharray={circumference}
+                strokeDashoffset={offset}
+                className={getScoreColor(complianceScore)}
+              />
+            </svg>
+            <div className="absolute text-xl font-bold text-gray-900">{complianceScore}%</div>
+          </div>
+          <div className="text-xs text-gray-600">Compliance</div>
+          <div className={`text-xs font-medium ${getScoreColor(complianceScore)}`}>
+            {getScoreLabel(complianceScore)}
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-2">
+            <span className="text-3xl">⚠️</span>
+          </div>
+          <div className="text-xs text-gray-600">Risk Level</div>
+          <div className="text-xs text-orange-600 font-medium">{riskLevel}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

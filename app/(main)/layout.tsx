@@ -1,16 +1,34 @@
 'use client';
 
 /**
- * Phase 5A: Main Layout
+ * Phase 5B: Main Layout
  * Layout for authenticated pages with sidebar and top bar
+ * Enhanced with navigation safety and onboarding checks
  */
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/dashboard/Sidebar';
 import TopBar from '@/components/dashboard/TopBar';
 import MarketTicker from '@/components/dashboard/MarketTicker';
+import { useOnboarding } from '@/lib/context/OnboardingContext';
 
 export default function MainLayout({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const { isComplete } = useOnboarding();
+
+  // Navigation safety: redirect to onboarding if not complete
+  useEffect(() => {
+    if (!isComplete) {
+      router.push('/onboarding');
+    }
+  }, [isComplete, router]);
+
+  // Don't render layout if onboarding incomplete
+  if (!isComplete) {
+    return null;
+  }
+
   return (
     <div className="h-screen flex flex-col">
       <div className="flex flex-1 overflow-hidden">
