@@ -10,6 +10,7 @@ import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: '▦', href: '/dashboard' },
+  { id: 'generate', label: 'Generate Tender', icon: '📝', href: '/generate' },
   { id: 'library', label: 'Tender Library', icon: '📄', href: '/tenders' },
   { id: 'analytics', label: 'Analytics', icon: '📊', href: '/analytics' },
   { id: 'compliance', label: 'Compliance', icon: '⚖️', href: '/compliance' },
