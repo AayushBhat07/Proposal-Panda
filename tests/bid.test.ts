@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   findDraftProblem,
+  keyClauseLines,
   MODEL_SECTIONS,
   parseProgramme,
   renderProgramme,
@@ -111,4 +112,45 @@ test('letter gets the address and subject line', () => {
   const out = MODEL_SECTIONS.transmittal.finish!('Sir,\nWe submit our bid.', facts);
   assert.match(out, /^To,\nThe Executive Engineer,/);
   assert.match(out, /Sub: Submission of bid for "Hostel block" against NIT No\. 14\/EE\/PCD-II\/2026-27\n\nSir,/);
+});
+
+test('key clauses keep the value lines under their headings', () => {
+  const run6 = [
+    '- Similar works:',
+    '  - Three works of Rs. 7.45 crore each.',
+    '- Compensation for delay:',
+    '  - Applies under Clause 2, with a maximum cap of 10% of the tendered value.',
+    '- Price variation / escalation clause (e.g. 10CC):',
+    '  - Does not apply to this work.',
+    '- Mobilisation or secured advance:',
+    '  - 10% of the tendered value at 10% simple interest against a bank guarantee of 110%.',
+    '- Security deposit and performance guarantee:',
+    '  - Security Deposit: 2.5% of the tendered value, to be recovered from running bills.',
+  ].join('\n');
+  const lines = keyClauseLines(run6, '1.5% per month, maximum 10%');
+  assert.equal(lines[0], 'Compensation for delay (Clause 2): 1.5% per month, maximum 10%');
+  assert.ok(lines.some(l => /10CC\): Does not apply/.test(l)));
+  assert.ok(lines.some(l => /advance: 10% .*10% simple interest/.test(l)));
+  assert.ok(!lines.some(l => /Similar works/.test(l)));
+  // Unindented values directly under a heading are kept too
+  const flat = keyClauseLines('Price variation (10CC):\nDoes not apply.\nSimilar works: three works.');
+  assert.deepEqual(flat, ['Price variation (10CC): Does not apply.']);
+});
+
+test('letter is addressed to the inviting office', () => {
+  const out = MODEL_SECTIONS.transmittal.finish!('Sir,', {
+    ...facts,
+    invitingOffice: 'Executive Engineer, Pune Central Division-II, Nirman Bhawan, Pune - 411001',
+  });
+  assert.match(out, /^To,\nThe Executive Engineer,\nPune Central Division-II,\nNirman Bhawan,\nPune - 411001\n/);
+});
+
+test('programme must schedule the road when the scope has one', () => {
+  const draft = 'Months 1-3: Foundations\nMonths 4-9: RCC frame\nMonths 10-18: Finishes';
+  assert.match(findDraftProblem(MODEL_SECTIONS.programme, draft, { ...facts, hasRoad: true }) ?? '', /road/);
+});
+
+test('rejects price commitments and wrong road terms', () => {
+  assert.ok(findDraftProblem(section, 'We will execute the work within the specified budget.', facts));
+  assert.ok(findDraftProblem(section, 'GSB (Good Strength Base) shall be laid.', facts));
 });

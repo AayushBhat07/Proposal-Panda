@@ -87,6 +87,10 @@ export interface TenderSummary {
     emdAmount?: string;
     /** Estimated cost put to tender as printed, if found */
     estimatedCost?: string;
+    /** Compensation for delay, e.g. "1.5% per month, maximum 10%", if found */
+    delayCompensation?: string;
+    /** Tender inviting office, e.g. "Executive Engineer, Pune Central Division-II, ...", if found */
+    invitingOffice?: string;
     /**
      * Ollama model tag; "<model> (+N extractive)" when N sections fell back;
      * 'extractive-fallback' when no local model was reachable
