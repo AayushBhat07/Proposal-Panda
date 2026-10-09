@@ -9,7 +9,20 @@ import {
 } from '../features/bid-generation/services/foundationBidGenerator';
 
 const section = { id: 's', title: 'Section', cover: 'technical' as const, brief: '' };
-const facts = { months: 18, emdAmount: 'Rs. 27,24,900', clauses: 'Price variation clause (10CC): Does not apply.' };
+const clauses = [
+  '- Compensation for delay (Clause 2): 1.5% per month, maximum 10%.',
+  '- Price variation / escalation clause (10CC): Does not apply.',
+  '- Similar works: three works of Rs. 7.45 crore each.',
+].join('\n');
+const facts = {
+  months: 18,
+  emdAmount: 'Rs. 27,24,900',
+  clauses,
+  nitRef: '14/EE/PCD-II/2026-27',
+  tenderTitle: 'Hostel block',
+  pan: 'ABCDE1234F',
+  gstin: '27ABCDE1234F1Z5',
+};
 
 test('rejects drafts that invent company eligibility facts', () => {
   const invented = [
@@ -18,6 +31,9 @@ test('rejects drafts that invent company eligibility facts', () => {
     'We confirm that our company has not incurred any loss in more than two years.',
     'We confirm that our company has the necessary technical capabilities.',
     'We are confident that our technical capabilities, experience, and resources make us an ideal candidate.',
+    'The bidder has valid EPF/ESI registration.',
+    'Quality tests will include cube tests and certification by a registered Chartered Accountant.',
+    'GSTIN and PAN (ABCD E1234F) enclosed.',
   ];
   for (const text of invented) assert.ok(findDraftProblem(section, `1. ${text}`, facts), text);
 });
@@ -66,4 +82,33 @@ test('transmittal must state the EMD amount', () => {
   const letter = MODEL_SECTIONS.transmittal;
   assert.ok(findDraftProblem(letter, 'EMD of Rs. [insert value] enclosed.', facts));
   assert.equal(findDraftProblem(letter, 'EMD of Rs. 27,24,900/- enclosed.', facts), undefined);
+});
+
+test('accepts tax IDs quoted exactly', () => {
+  assert.equal(findDraftProblem(section, 'GSTIN 27ABCDE1234F1Z5, PAN ABCDE1234F.', facts), undefined);
+});
+
+test('rejects queries that say the tender lacks something', () => {
+  const q = '1. Considering the absence of a clear dispute resolution mechanism, please clarify.';
+  assert.match(findDraftProblem(MODEL_SECTIONS.queries, q, facts) ?? '', /lacks/);
+});
+
+test('rejects a programme that lays masonry before the frame', () => {
+  const draft = 'Months 1-3: Foundations\nMonths 4-6: AAC masonry\nMonths 7-12: RCC frame\nMonths 13-18: Flooring';
+  assert.match(findDraftProblem(MODEL_SECTIONS.programme, draft, facts) ?? '', /masonry before RCC frame/);
+  const ok = 'Months 1-3: Foundations\nMonths 4-9: RCC frame\nMonths 10-12: AAC masonry\nMonths 13-18: Flooring';
+  assert.equal(findDraftProblem(MODEL_SECTIONS.programme, ok, facts), undefined);
+});
+
+test('compliance carries the key clauses from the analysis', () => {
+  const out = MODEL_SECTIONS.compliance.finish!('1. EMD enclosed.', facts);
+  assert.match(out, /- Compensation for delay \(Clause 2\): 1\.5% per month, maximum 10%\./);
+  assert.match(out, /10CC\): Does not apply/);
+  assert.doesNotMatch(out, /Similar works/);
+});
+
+test('letter gets the address and subject line', () => {
+  const out = MODEL_SECTIONS.transmittal.finish!('Sir,\nWe submit our bid.', facts);
+  assert.match(out, /^To,\nThe Executive Engineer,/);
+  assert.match(out, /Sub: Submission of bid for "Hostel block" against NIT No\. 14\/EE\/PCD-II\/2026-27\n\nSir,/);
 });
