@@ -19,6 +19,35 @@ export interface DraftFacts {
   emdAmount?: string;
   /** The analysis' eligibility and key clauses summary */
   clauses: string;
+  nitRef: string;
+  tenderTitle: string;
+  pan: string;
+  gstin: string;
+}
+
+/** Lines of the clause summary the compliance statement must carry verbatim. */
+const KEY_CLAUSE = /clause\s*2\b|compensation for delay|10\s*CC|price variation|escalation|mobili[sz]ation advance|security deposit/i;
+
+/** Key contract clauses copied from the analysis, so the compliance statement can't drop or flip them. */
+export function keyClauseLines(clauses: string): string[] {
+  return clauses
+    .split(/\n+/)
+    .map(line => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim())
+    .filter(line => KEY_CLAUSE.test(line));
+}
+
+/** Order the trades must start in; each must not begin before the one listed before it. */
+const BUILD_ORDER: Array<[string, RegExp]> = [
+  ['foundations', /foundation|footing|excavation/i],
+  ['RCC frame', /rcc|frame|superstructure|slab/i],
+  ['masonry', /\baac\b|block ?work|brick ?work|masonry (?:walls?|work)/i],
+  ['flooring and finishes', /flooring|tiling|tiles|finish|painting/i],
+];
+
+/** First month in the programme whose activities match. */
+function firstMonth(plan: Map<number, string>, pattern: RegExp): number | undefined {
+  const months = [...plan].filter(([, a]) => pattern.test(a)).map(([m]) => m);
+  return months.length ? Math.min(...months) : undefined;
 }
 
 /**
@@ -41,8 +70,8 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     title: 'Letter of Transmittal',
     cover: 'technical',
     brief:
-      'A formal letter of transmittal to the Executive Engineer / tender inviting authority, in the CPWD style: ' +
-      'reference the NIT and work name, list the documents enclosed in Cover I (EMD, registration, financial ' +
+      'The body of a formal letter of transmittal to the Executive Engineer, in the CPWD style, starting at ' +
+      '"Sir," (the address and subject line are added separately): list the documents enclosed in Cover I (EMD, registration, financial ' +
       'information, similar works, affidavits), confirm the financial bid is submitted separately in Cover II, and ' +
       'confirm acceptance of all tender conditions. Use the NIT reference from KEY FIGURES exactly, and state the ' +
       'EMD amount from KEY FIGURES in figures. Do not cite clause numbers and do not restate eligibility thresholds. ' +
@@ -52,6 +81,16 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       emdAmount && !content.replace(/\s/g, '').includes(emdAmount.replace(/^Rs\.\s*/, ''))
         ? 'it does not state the EMD amount'
         : undefined,
+    finish: (content, { nitRef, tenderTitle }) =>
+      [
+        'To,',
+        'The Executive Engineer,',
+        '[Division and address as per NIT]',
+        '',
+        `Sub: Submission of bid for "${tenderTitle}" against NIT No. ${nitRef}`,
+        '',
+        content.replace(/^\s*(?:To,?[\s\S]*?)?(?=(?:Dear )?Sir)/i, ''),
+      ].join('\n'),
   },
   scope: {
     id: 'scope-understanding',
@@ -68,8 +107,10 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'not include: earthwork and foundations; RCC superstructure (concrete grade, steel grade); masonry; flooring ' +
       'and finishes; waterproofing; water supply; sanitary installations; electrical installations; roads; drainage; ' +
       'GRIHA / green-building measures. In each paragraph name only the specifications and standards the tender ' +
-      'text gives for that item, the sequence of work, and the quality tests for that item. Then one paragraph on ' +
-      'safety and one on key technical staff and plant [to be listed]. Do not write a work programme. ' +
+      'text gives for that item (quote them as written, e.g. MoRTH layers and carriageway width for roads, mix design ' +
+      'standard and RMC for concrete), the sequence of work, and the physical or laboratory tests for that item. ' +
+      'Never invent materials or methods the tender does not state. Then one paragraph on safety and one line ' +
+      '"Key technical staff and plant: [to be listed]". Do not write a work programme. ' +
       'Do not repeat text between items and do not end with a note or disclaimer.',
     needsSource: true,
     maxTokens: 1600,
@@ -80,10 +121,21 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     cover: 'technical',
     brief:
       'A month-by-month work programme. Write exactly one line per month, from "Month 1:" to "Month {completionMonths}:", ' +
-      'each followed by the activities in that month, allowing for monsoon. Output only those lines.',
+      'each followed by the activities in that month. Follow the build order: mobilisation, foundations, RCC frame ' +
+      'floor by floor (about a third of the period for a multi-storey frame), masonry, services rough-in, ' +
+      'waterproofing, flooring and finishes, services fixtures, external road and drainage outside the monsoon ' +
+      '(June to September), then testing and handover. Output only those lines.',
     check: (content, { months }) => {
-      const planned = parseProgramme(content).size;
-      return planned < Math.ceil((months ?? 2) / 2) ? `it plans only ${planned} month(s)` : undefined;
+      const plan = parseProgramme(content);
+      if (plan.size < Math.ceil((months ?? 2) / 2)) return `it plans only ${plan.size} month(s)`;
+      let previous: [string, number] | undefined;
+      for (const [trade, pattern] of BUILD_ORDER) {
+        const start = firstMonth(plan, pattern);
+        if (start === undefined) continue;
+        if (previous && start < previous[1]) return `it starts ${trade} before ${previous[0]}`;
+        previous = [trade, start];
+      }
+      return undefined;
     },
     finish: (content, { months }) => renderProgramme(content, months),
   },
@@ -92,21 +144,25 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     title: 'Compliance with Tender Conditions',
     cover: 'technical',
     brief:
-      'A clause-by-clause compliance statement: for each submission, EMD, performance security, security deposit, ' +
-      'advance, eligibility and legal requirement found in the analysis, one line stating how the bidder complies. ' +
+      'A clause-by-clause compliance statement: for each submission, EMD, performance security, eligibility and ' +
+      'legal requirement found in the analysis, one line stating how the bidder complies. Leave out compensation ' +
+      'for delay, price variation, advances and security deposit: those are listed separately. ' +
+      'Do not restate the bidder\'s GSTIN, PAN or any registration; write "[as per enclosed registration certificates]". ' +
       'For eligibility criteria (similar works, turnover, no-loss, solvency, bid capacity) never assert the bidder ' +
       'meets them: write "Supporting documents enclosed at [Annexure __]; to be confirmed from company records." ' +
-      'Mark a clause "does not apply" only where the eligibility and key clauses summary says so for that clause ' +
-      '(e.g. price variation 10CC); every other clause applies, including compensation for delay under Clause 2, ' +
-      'whose rate and cap you state. The security deposit is recovered by the department from running bills. ' +
-      'The mobilisation advance, if offered, is paid by the department against a bank guarantee from the bidder. ' +
-      'Address each flagged risk and submission trap factually. Do not comment on clauses the tender does not contain.',
+      'Never mark a clause as not applicable. Address each flagged risk and submission trap factually. Do not comment on clauses the tender does not contain.',
     needsSource: true,
     check: (content, { clauses }) => {
       const wrong = [...content.matchAll(/Clause\s*(\d+[A-Z]*)\b[^\n]{0,80}?\bdoes not apply/gi)]
         .map(m => m[1])
         .find(c => !new RegExp(`\\b${c}\\b[^\\n]{0,80}?does not apply`, 'i').test(clauses));
       return wrong ? `it says Clause ${wrong} does not apply, which the tender analysis does not` : undefined;
+    },
+    finish: (content, { clauses }) => {
+      const lines = keyClauseLines(clauses);
+      return lines.length
+        ? `${content}\n\nKey contract clauses (as stated in the tender; accepted):\n${lines.map(l => `- ${l}`).join('\n')}`
+        : content;
     },
   },
   queries: {
@@ -119,19 +175,30 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'recovered). Do not repeat a query. Cite a clause number only if it appears in the analysis. Focus on ambiguous or ' +
       'onerous conditions: delay compensation and its cap, price variation / escalation, advances, third-party ' +
       'approvals or certification costs (e.g. GRIHA, RMC plant approval), site access and utilities. ' +
+      'Never claim the tender lacks something; only ask about what is unclear. ' +
       'Keep each query to one or two sentences.',
-    check: content => (/^\s*1[.)]\s/m.test(content) ? undefined : 'it has no numbered queries'),
+    check: content => {
+      if (!/^\s*1[.)]\s/m.test(content)) return 'it has no numbered queries';
+      const claim = content.match(/absence of|\black(?:s|ing)? (?:a|any|clear)|not (?:clearly )?(?:mentioned|specified|provided|defined)|does not (?:include|contain|mention|specify|provide)/i);
+      return claim ? `it says the tender lacks something ("${claim[0]}")` : undefined;
+    },
   },
 };
 
 /** Statements a draft must never make: they are eligibility facts only company records can supply. */
 const INVENTED_CLAIMS =
-  /\b(?:our|the) (?:company|firm)\b[^.]{0,40}\b(?:has|have|had) (?:successfully )?(?:completed|executed)|\bturnover\b[^.]{0,80}\bwas (?:Rs|INR|₹)|\b(?:our|its) [^.]{0,30}\bturnover\b[^.]{0,60}\b(?:is|of) (?:Rs|INR|₹)|has not (?:incurred|suffered) (?:any )?loss|(?:have|has|possess) (?:the )?(?:necessary|requisite|adequate) (?:technical |financial )?(?:capabilit|capacit|experience)|we (?:meet|fulfil|fulfill|satisfy) (?:all )?(?:the )?eligibility|\bour (?:technical )?(?:capabilit\w*|experience|expertise|track record)\b|\bideal candidate\b|\bwell[- ]equipped\b/i;
+  /\b(?:our|the) (?:company|firm)\b[^.]{0,40}\b(?:has|have|had) (?:successfully )?(?:completed|executed)|\bturnover\b[^.]{0,80}\bwas (?:Rs|INR|₹)|\b(?:our|its) [^.]{0,30}\bturnover\b[^.]{0,60}\b(?:is|of) (?:Rs|INR|₹)|has not (?:incurred|suffered) (?:any )?loss|(?:have|has|possess) (?:the )?(?:necessary|requisite|adequate) (?:technical |financial )?(?:capabilit|capacit|experience)|we (?:meet|fulfil|fulfill|satisfy) (?:all )?(?:the )?eligibility|\bour (?:technical )?(?:capabilit\w*|experience|expertise|track record)\b|\bideal candidate\b|\bwell[- ]equipped\b|\b(?:has|have|holds?|possess(?:es)?) (?:a |the )?(?:valid )?[^.]{0,30}\b(?:EPF|ESI|ESIC|PF)\b|chartered accountant[^.]{0,40}\b(?:concrete|test|cube|quality)|(?:concrete|test|cube|quality)[^.]{0,60}chartered accountant/i;
+
+const PAN_SHAPE = /\b[A-Z]{5}\s?\d{4}\s?[A-Z]\b|\b[A-Z]{4}\s[A-Z]\d{4}[A-Z]\b/g;
+const GSTIN_SHAPE = /\b\d{2}\s?[A-Z]{5}\s?\d{4}[A-Z]\d[A-Z][A-Z\d]\b/g;
 
 /** Returns why a model draft can't be used, or undefined if it passes. */
 export function findDraftProblem(section: ModelSection, content: string, facts: DraftFacts): string | undefined {
   const claim = content.match(INVENTED_CLAIMS);
   if (claim) return `it states company facts not in the profile ("${claim[0]}")`;
+  const ids = [...content.matchAll(PAN_SHAPE), ...content.matchAll(GSTIN_SHAPE)].map(m => m[0]);
+  const wrongId = ids.find(id => id !== facts.pan && id !== facts.gstin && !facts.gstin.includes(id));
+  if (wrongId) return `it misquotes a tax ID ("${wrongId}")`;
   return section.check?.(content, facts);
 }
 
@@ -260,6 +327,10 @@ export async function generateFoundationBid(
     months,
     emdAmount: report.summary.metadata.emdAmount,
     clauses: report.summary.eligibilityAndClauses ?? '',
+    nitRef,
+    tenderTitle,
+    pan: company.panNumber,
+    gstin: company.gstin,
   };
   const context = buildContext(report, company);
   const sourceExcerpt = report.summary.sourceText ? `\n\nTENDER TEXT (selected extracts):\n${report.summary.sourceText}` : '';
