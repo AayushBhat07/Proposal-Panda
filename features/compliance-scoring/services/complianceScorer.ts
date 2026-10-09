@@ -493,7 +493,7 @@ function identifyMissingClauses(
   if (!legalText.includes('force majeure') && !legalText.includes('unforeseen')) {
     clauses.push({
       clause: 'Force Majeure Clause',
-      reason: 'The tender does not explicitly address force majeure events.',
+      reason: 'Not found in the tender text summary. Check whether the General Conditions of Contract it refers to (e.g. CPWD GCC) cover it.',
     });
   }
 

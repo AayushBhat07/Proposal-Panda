@@ -8,7 +8,8 @@ import type { CompanyProfile } from '@/types/onboarding.types';
 import type { BidSection } from '../types/bid.types';
 
 interface TemplateInput {
-  tenderId: string;
+  /** NIT reference as printed on the tender, or a placeholder */
+  nitRef: string;
   tenderTitle: string;
   company: CompanyProfile;
 }
@@ -34,14 +35,15 @@ export function documentChecklist({ company }: TemplateInput): string {
     '13. Affidavit: not blacklisted or debarred [attach]',
     '14. Declaration of site inspection [attach]',
     '15. Letter of transmittal and tender acceptance letter (signed) [attach]',
+    '16. Integrity Pact, signed, if required by the NIT [attach]',
   ].join('\n');
 }
 
-export function declarations({ company, tenderId, tenderTitle }: TemplateInput): string {
+export function declarations({ company, nitRef, tenderTitle }: TemplateInput): string {
   return [
     '**Tender Acceptance Letter**',
     '',
-    `We, ${company.legalName}, have read all the terms and conditions of tender ${tenderId} (${tenderTitle}), including the`,
+    `We, ${company.legalName}, have read all the terms and conditions of NIT No. ${nitRef} (${tenderTitle}), including the`,
     'NIT, general and special conditions, specifications, drawings and BOQ, and accept them unconditionally.',
     'We confirm that our bid shall remain valid for the period stated in the NIT.',
     '',
@@ -81,9 +83,9 @@ export function bidCapacity(): string {
   ].join('\n');
 }
 
-export function financialBid({ company, tenderId, tenderTitle }: TemplateInput): string {
+export function financialBid({ company, nitRef, tenderTitle }: TemplateInput): string {
   return [
-    `**Financial Bid (Cover II) for ${tenderId}: ${tenderTitle}**`,
+    `**Financial Bid (Cover II) for NIT No. ${nitRef}: ${tenderTitle}**`,
     '',
     'Fill in the BOQ / percentage-rate sheet on the e-procurement portal. Do not reveal prices anywhere in Cover I,',
     'or the bid may be rejected.',
