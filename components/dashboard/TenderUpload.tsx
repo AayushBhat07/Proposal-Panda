@@ -39,7 +39,7 @@ export default function TenderUpload({ onUpload, disabled = false }: TenderUploa
     if (disabled) return;
 
     const files = Array.from(e.dataTransfer.files);
-    const validFile = files.find(f => f.name.endsWith('.docx') || f.name.endsWith('.pdf'));
+    const validFile = files.find(f => /\.(?:pdf|docx)$/i.test(f.name));
 
     if (!validFile) {
       setError('Please upload a PDF or DOCX file');
@@ -60,7 +60,7 @@ export default function TenderUpload({ onUpload, disabled = false }: TenderUploa
     
     if (!file) return;
 
-    if (!file.name.endsWith('.pdf') && !file.name.endsWith('.docx')) {
+    if (!/\.(?:pdf|docx)$/i.test(file.name)) {
       setError('Please upload a PDF or DOCX file');
       return;
     }
