@@ -9,7 +9,15 @@ import {
   parseProgramme,
   renderProgramme,
   tidyDraft,
+  sectionsFor,
+  fitBriefToTender,
+  MAINTENANCE_PROGRAMME,
+  INFRASTRUCTURE_PROGRAMME,
+  methodologyItems,
+  gradesIn,
+  redactUnknownGrades,
 } from '../features/bid-generation/services/foundationBidGenerator';
+import { declarations, documentChecklist, financialBid } from '../features/bid-generation/services/bidTemplates';
 
 const section = { id: 's', title: 'Section', cover: 'technical' as const, brief: '' };
 const clauses = [
@@ -204,4 +212,57 @@ test('compliance drops its own lines on quoted terms and quotes the NIT', () => 
 test('rejects a programme that idles in testing and handover', () => {
   const draft = 'Months 1-3: Foundations\nMonths 4-9: RCC frame\nMonths 10-12: Flooring and finishes\nMonths 13-15: Testing and handover preparation\nMonths 16-18: Final testing';
   assert.match(findDraftProblem(MODEL_SECTIONS.programme, draft, facts) ?? '', /testing and handover only/);
+});
+
+test('goods and services tenders get their own sections and proformas', () => {
+  const supply = sectionsFor('supply');
+  assert.equal(supply.methodology.title, 'Supply, Delivery and Quality Plan');
+  assert.equal(supply.scope.title, 'Understanding of Scope of Supply');
+  assert.doesNotMatch(supply.queries.brief, /GRIHA|RMC/);
+  assert.equal(sectionsFor('services').methodology.title, 'Service Delivery Methodology');
+  assert.equal(sectionsFor('works'), MODEL_SECTIONS);
+
+  const company = { legalName: 'Panda Infra Pvt Ltd', registrationClass: 'Class I-A', gstin: '27ABCDE1234F1Z5', panNumber: 'ABCDE1234F', registeredAddress: 'Pune' } as never;
+  const input = { nitRef: 'GEM/2024/B/1', tenderTitle: 'Laptops', company };
+  assert.match(documentChecklist({ ...input, kind: 'supply' }), /OEM authorisation/);
+  assert.doesNotMatch(documentChecklist({ ...input, kind: 'supply' }), /site inspection|bid capacity/i);
+  assert.doesNotMatch(declarations({ ...input, kind: 'services' }), /Site Inspection/);
+  assert.match(declarations({ ...input, kind: 'works' }), /Site Inspection/);
+  assert.match(financialBid({ ...input, kind: 'services' }), /Minimum wages/);
+  assert.match(documentChecklist({ ...input, kind: 'works' }), /^16\. Integrity Pact/m);
+});
+
+test('briefs mention GRIHA and RMC only when the tender does', () => {
+  const brief = MODEL_SECTIONS.queries.brief;
+  assert.doesNotMatch(fitBriefToTender(brief, 'minor maintenance civil works, paver blocks'), /GRIHA|RMC|\(e\.g\.\s*\)|\s,/);
+  assert.match(fitBriefToTender(brief, 'achieve GRIHA 3-star; ready mix concrete from RMC plant'), /GRIHA, RMC plant approval/);
+  assert.doesNotMatch(fitBriefToTender(MODEL_SECTIONS.methodology.brief, 'boundary wall'), /GRIHA/);
+});
+
+test('a maintenance contract programme may not invent new construction', () => {
+  const facts = { months: 3, clauses: '', nitRef: 'X', tenderTitle: 'X', pan: 'ABCDE1234F', gstin: '27ABCDE1234F1Z5' };
+  const built = 'Month 1: Mobilisation\nMonth 2: Construction of RCC frame, floor by floor\nMonth 3: Testing';
+  assert.match(findDraftProblem(MAINTENANCE_PROGRAMME, built, facts) ?? '', /new construction/);
+  const ok = 'Month 1: Mobilisation and paver block repairs\nMonth 2: Sanitary repairs as per work orders\nMonth 3: Painting';
+  assert.equal(findDraftProblem(MAINTENANCE_PROGRAMME, ok, facts), undefined);
+});
+
+test('methodology covers only the items the tender names, and unknown grades are redacted', () => {
+  const road = 'Construction of Service road and Diversion road at LC No. 66. Earthwork in embankment, GSB, WMM, bituminous surfacing. NP3 hume pipe culverts.';
+  assert.equal(methodologyItems(road), 'earthwork and foundations; roads; bridges and culverts; drainage');
+  assert.match(methodologyItems('G+4 RCC framed quarters with AAC masonry, vitrified flooring, water supply'), /RCC superstructure.*masonry.*flooring.*water supply/);
+  assert.match(methodologyItems('nothing recognisable'), /^earthwork and foundations; RCC superstructure/);
+  const tender = gradesIn('Concrete M-20 and steel Fe 415 as per MORTH.');
+  assert.equal(
+    redactUnknownGrades('Use M25 concrete and Fe500D bars; M20 for culverts with Fe 415.', tender),
+    'Use [concrete grade as per tender] concrete and [steel grade as per tender] bars; M20 for culverts with Fe 415.'
+  );
+});
+
+test('road, building and maintenance works get their own programmes', () => {
+  const facts = { months: 3, clauses: '', nitRef: 'X', tenderTitle: 'X', pan: 'ABCDE1234F', gstin: '27ABCDE1234F1Z5' };
+  const building = 'Month 1: Mobilisation\nMonth 2: RCC frame floor by floor\nMonth 3: Masonry and flooring';
+  assert.match(findDraftProblem(INFRASTRUCTURE_PROGRAMME, building, facts) ?? '', /building work/);
+  const road = 'Month 1: Mobilisation and survey\nMonth 2: Earthwork and GSB\nMonth 3: WMM, bituminous surfacing, handover';
+  assert.equal(findDraftProblem(INFRASTRUCTURE_PROGRAMME, road, facts), undefined);
 });

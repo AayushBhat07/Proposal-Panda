@@ -8,6 +8,12 @@ import {
   findEmdAmount,
   findEstimatedCost,
   findNitReference,
+  findNameOfWork,
+  findTenderKind,
+  findWorksType,
+  isMaintenanceWork,
+  SCHEDULE_WISE_EMD,
+  pickChunks,
   selectSourceText,
 } from '../features/summarization/services/summarizer';
 
@@ -80,4 +86,117 @@ test('quotes key contract terms from the tender text', () => {
   );
   assert.match(terms['Mobilisation advance'], /10% simple interest/);
   assert.match(terms['Performance guarantee'], /7 days/);
+});
+
+// Layouts copied from real tenders (IIT Kanpur, AIIMS Raipur, PRL/ISRO, DFCCIL, BMC, GeM, East Central Railway).
+test('reads NIT numbers in the forms real tenders print them', () => {
+  assert.equal(findNitReference('NIT No: 50/Civil/D1/2026-27\n1 Name of work'), '50/Civil/D1/2026-27');
+  assert.equal(findNitReference('N.I.T. NO. 21/EE/AIIMS/RPR/2018-19 (2nd Call) Date: - 24/11/2018'), '21/EE/AIIMS/RPR/2018-19');
+  assert.equal(findNitReference('E-Tender Notice No.: PRL/CMG/e-Tender 19/2024-25 dated 07-11-2024'), 'PRL/CMG/e-Tender 19/2024-25');
+  assert.equal(findNitReference('Tender NO: TDL/EN/RPF POST BUILDING/2020/01 DATED: 21.10.2020'), 'TDL/EN/RPF POST BUILDING/2020/01');
+  assert.equal(findNitReference('Bid No. - 2026_MCGM_1286135_1\nSubject: Supply'), '2026_MCGM_1286135_1');
+  assert.equal(findNitReference('Bid Number/बोली क्रमांक (बिड संख्या):\nGEM/2024/B/4869384\nDated'), 'GEM/2024/B/4869384');
+  assert.equal(findNitReference('No.EE/NIRD/2016-17/NIT/14 F.No. :EE/CMU/2015-16/259'), 'EE/NIRD/2016-17/NIT/14');
+  assert.equal(findNitReference('as required in the NIT at CPP portal'), undefined);
+});
+
+test('reads completion periods written in words, days and table rows', () => {
+  assert.equal(findCompletionMonths('4 Duration of contract : Twelve (12) months'), 12);
+  assert.equal(findCompletionMonths('4 Duration of contract : Two (02) Months'), 2);
+  assert.equal(findCompletionMonths('TIME ALLOWED: 90 (Ninety) Days'), 3);
+  assert.equal(findCompletionMonths('(b) Completion Period 12 Months'), 12);
+  assert.equal(findCompletionMonths('1.4 Duration of Contract 06 months'), 6);
+  assert.equal(findCompletionMonths('Duration of 30 Minutes'), undefined);
+});
+
+test('reads amounts from rows, next-line table cells and lakh figures, but not thresholds or rules', () => {
+  assert.equal(findEmdAmount('3 Earnest Money Deposit (Rs.) : Rs. 33446/-'), 'Rs. 33446');
+  assert.equal(findEstimatedCost('2 Estimated cost (including GST) : Rs. 1672324/-, The cost is for 12 months.'), 'Rs. 1672324');
+  assert.equal(findEstimatedCost('ESTIMATED COST\nPUT TO TENDER: Rs. 38, 32,203/-\nEARNEST MONEY: Rs. 76,700/-'), 'Rs. 38,32,203');
+  assert.equal(findEmdAmount('ESTIMATED COST\nPUT TO TENDER: Rs. 38, 32,203/-\nEARNEST MONEY: Rs. 76,700/-'), 'Rs. 76,700');
+  const isro = [
+    'Estimated cost put to tender रु',
+    '19.66 लाख',
+    '₹ 19.66 Lakhs',
+    'Earnest Money Deposit (EMD)',
+    '₹ 39,320 /-',
+    'similar works each costing not less than the amount equal to 40% of the estimated cost (i.e. ₹ 7.86 lakhs)',
+  ].join('\n');
+  assert.equal(findEmdAmount(isro), 'Rs. 39,320');
+  assert.equal(findEstimatedCost(isro.split('\n').slice(3).join('\n')), undefined);
+  assert.equal(findEstimatedCost(isro), 'Rs. 19.66 lakh');
+  assert.equal(findEmdAmount('b) EMD will be Rs. 50 lakh for tenders valuing above Rs. 50 Cr.'), undefined);
+  assert.equal(findEstimatedCost('Works having estimated value of Rs. 10 lakhs and above.'), undefined);
+  assert.equal(findEmdAmount('5.2.1 Amount of EMD (rounded off to nearest higher Rs. 10 (ten))'), undefined);
+});
+
+test('reads Clause 10CC from CPWD Schedule F tables', () => {
+  const iitk = 'Clause 10 CA NOT APPLICABLE\nClause 10 CC Increase/Decrease in Price of\nmaterials/wages\nNOT APPLICABLE\nClause 11 CPWD Specifications of';
+  const terms = Object.fromEntries(findKeyTerms(iitk).map(t => [t.label, t.text]));
+  assert.equal(terms['Price variation (Clause 10CC)'], 'Clause 10 CC Increase/Decrease in Price of materials/wages NOT APPLICABLE.');
+  const aiims =
+    'Clause10CC\nClause 10CC to be applicable in contracts\nwith sipulated period of compensation\nExceeding the period shown in next column : Not Applicable\nMaterial covered under this';
+  assert.match(
+    Object.fromEntries(findKeyTerms(aiims).map(t => [t.label, t.text]))['Price variation (Clause 10CC)'],
+    /: Not Applicable\.$/
+  );
+});
+
+test('skips unfilled template blanks and quotes wrapped sentences whole', () => {
+  const text = [
+    'of Contract, Mobilization Advance up to ___% (___ percent) of the original contract.',
+    'Mobilisation advance – This shall be limited to 10% of the contract value and payable',
+    'in two instalments.',
+  ].join('\n');
+  assert.equal(
+    Object.fromEntries(findKeyTerms(text).map(t => [t.label, t.text]))['Mobilisation advance'],
+    'Mobilisation advance – This shall be limited to 10% of the contract value and payable in two instalments.'
+  );
+});
+
+test('tells works, supply and services tenders apart', () => {
+  assert.equal(findTenderKind('NOTICE INVITING TENDER\nName of work: Construction of boundary wall. Percentage rate tender.'), 'works');
+  assert.equal(findTenderKind('Bid Number: GEM/2024/B/1\nItem Category: Laptop\nConsignee details. Warranty 3 years.'), 'supply');
+  assert.equal(findTenderKind('Subject: Supply, Installation, Testing, Commissioning and Maintenance of Computers'), 'supply');
+  assert.equal(findTenderKind('Hiring of agencies for security personnel to safeguard municipal offices. Manpower.'), 'services');
+});
+
+test('picks the chunks most about a topic, not just the first that mention it', () => {
+  const chunk = (index: number, text: string) => ({ index, text, tokenCount: 0, source: 'Full Text' });
+  const chunks = [
+    chunk(0, 'Index. EMD scan copy. Notice.'),
+    chunk(1, 'General instructions. EMD to be paid online.'),
+    chunk(2, 'Schedule: Earnest money Rs 33446. Performance guarantee 5%. Security deposit 2.5%. Time allowed 12 months.'),
+  ];
+  const picked = pickChunks(chunks, ['emd', 'earnest money', 'performance guarantee', 'security deposit', 'time allowed'], 1);
+  assert.deepEqual(picked.map(c => c.index), [2]);
+});
+
+test('reads the name of work, including wrapped lines, and spots maintenance contracts', () => {
+  assert.equal(
+    findNameOfWork('NIT No: 50/Civil/D1/2026-27\n1 Name of work : Carrying out minor maintenance civil\nworks of Out reach Centre Noida.\n2 Estimated cost : Rs. 1672324/-'),
+    'Carrying out minor maintenance civil works of Out reach Centre Noida'
+  );
+  assert.equal(
+    findNameOfWork('NAME OF WORK: - “Raising of boundry wall height by cocertiana coil and\nmiscellaneous work at Residential Complex, AIIMS\nRaipur.”\nESTIMATED COST'),
+    'Raising of boundry wall height by cocertiana coil and miscellaneous work at Residential Complex, AIIMS Raipur'
+  );
+  assert.equal(findNameOfWork('Sub: Submission of Technical Proposal.\nDear Sir,'), undefined);
+  assert.equal(findNameOfWork('No. Name of Work\nNature\nof\nWork'), undefined);
+  assert.equal(isMaintenanceWork('Carrying out minor maintenance civil works of Out reach Centre Noida', ''), true);
+  assert.equal(isMaintenanceWork('Construction of RPF Post building at New Khurja', ''), false);
+});
+
+test('GeM bids with schedule-wise EMD report no single figure', () => {
+  const gem = 'Schedule 1 EMD Amount/ईएमडी राशि (In INR) 8454\nSchedule 2 EMD Amount/ईएमडी राशि (In INR) 7477';
+  assert.equal(findEmdAmount(gem), SCHEDULE_WISE_EMD);
+});
+
+test('tells building, infrastructure and maintenance works apart', () => {
+  assert.equal(findWorksType('Construction of RPF Post building at New Khurja & New Ekdil', ''), 'building');
+  assert.equal(findWorksType('Construction of Service road and Diversion road at LC No. 66', ''), 'infrastructure');
+  assert.equal(findWorksType('Raising of boundry wall height by concertina coil', ''), 'infrastructure');
+  assert.equal(findWorksType('Raising of boundry wall height by cocertiana coil and miscellaneous work at Residential Complex, AIIMS Raipur', ''), 'infrastructure');
+  assert.equal(findWorksType('Carrying out minor maintenance civil works of Out reach Centre Noida', ''), 'maintenance');
+  assert.equal(findWorksType(undefined, 'Construction of G+4 RCC framed quarters'), 'building');
 });
