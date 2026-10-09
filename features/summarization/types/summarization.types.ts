@@ -93,6 +93,12 @@ export interface TenderSummary {
     invitingOffice?: string;
     /** Delay, price variation, advance, security deposit and guarantee terms quoted from the tender text */
     keyTerms?: Array<{ label: string; text: string }>;
+    /** Works (build/repair), supply (goods, GeM) or services (manpower, security, consultancy, O&M) */
+    tenderKind?: 'works' | 'supply' | 'services';
+    /** Name of work / subject as printed in the NIT, if found */
+    nameOfWork?: string;
+    /** For works tenders: a building, infrastructure (road, bridge, drain...) or maintenance / repair contract */
+    worksType?: 'building' | 'infrastructure' | 'maintenance';
     /**
      * Ollama model tag; "<model> (+N extractive)" when N sections fell back;
      * 'extractive-fallback' when no local model was reachable
