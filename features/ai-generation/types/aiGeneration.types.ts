@@ -19,6 +19,8 @@ export interface InferenceOptions {
 export interface LlmGenerationRequest {
   systemPrompt: string;
   userPrompt: string;
+  /** Ollama model tag; defaults to AI_CONFIG.MODEL_NAME */
+  model?: string;
   inferenceOptions?: InferenceOptions;
 }
 

@@ -7,7 +7,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
+import { useAuthStore } from '@/state/authStore';
 import AnalysisTabs from '@/components/analysis/AnalysisTabs';
 import SummaryPanel from '@/components/analysis/SummaryPanel';
 import CompliancePanel from '@/components/analysis/CompliancePanel';
@@ -19,8 +20,10 @@ import Spinner from '@/components/ui/Spinner';
 import { getFromLocalStorage } from '@/services/storage/mockStorageService';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator/types/orchestration.types';
 
-export default function TenderAnalysisPage({ params }: { params: { id: string } }) {
+export default function TenderAnalysisPage() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { can } = useAuthStore();
   const [activeTab, setActiveTab] = useState('summary');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -167,12 +170,14 @@ export default function TenderAnalysisPage({ params }: { params: { id: string } 
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" className="border-gray-300 text-gray-700">
-              🔗 Share
-            </Button>
-            <Button variant="outline" className="border-gray-300 text-gray-700">
-              📥 Download PDF Report
-            </Button>
+            {can('bid.view') && (
+              <Button
+                onClick={() => router.push(`/tenders/${params.id}/bid`)}
+                className="bg-amber-900 text-white hover:bg-amber-800 focus:ring-amber-900"
+              >
+                Foundation Bid →
+              </Button>
+            )}
           </div>
         </div>
       </div>

@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import mammoth from 'mammoth';
+import { extractText, getDocumentProxy } from 'unpdf';
 
 /**
  * Extract text from .docx file
@@ -43,6 +44,16 @@ export async function extractTextFromDocx(filePath: string): Promise<string> {
       }
       
       return extractedText || 'Failed to extract meaningful text from .docx';
+    }
+
+    // Handle .pdf format (text layer only; scanned PDFs need OCR first)
+    if (ext === '.pdf') {
+      const pdf = await getDocumentProxy(new Uint8Array(fs.readFileSync(filePath)));
+      const { text } = await extractText(pdf, { mergePages: true });
+      if (text.trim().length < 100) {
+        throw new Error('No text layer found in PDF. Scanned tenders need OCR before upload.');
+      }
+      return text;
     }
 
     throw new Error(`Unsupported file format: ${ext}`);

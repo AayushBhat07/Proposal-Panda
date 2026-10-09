@@ -6,19 +6,25 @@
  */
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useAuthStore } from '@/state/authStore';
+import type { Permission } from '@/lib/auth/rbac';
 
-const NAV_ITEMS = [
+// Only pages that exist; each is shown only to roles that can open it.
+const NAV_ITEMS: Array<{ id: string; label: string; icon: string; href: string; permission?: Permission }> = [
   { id: 'dashboard', label: 'Dashboard', icon: '▦', href: '/dashboard' },
-  { id: 'generate', label: 'Generate Tender', icon: '📝', href: '/generate' },
-  { id: 'library', label: 'Tender Library', icon: '📄', href: '/tenders' },
-  { id: 'analytics', label: 'Analytics', icon: '📊', href: '/analytics' },
-  { id: 'compliance', label: 'Compliance', icon: '⚖️', href: '/compliance' },
-  { id: 'settings', label: 'Settings', icon: '⚙️', href: '/settings' },
+  { id: 'generate', label: 'Generate Tender', icon: '📝', href: '/generate', permission: 'tender.create' },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { can, logout } = useAuthStore();
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/login');
+  };
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
@@ -37,7 +43,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {NAV_ITEMS.map(item => {
+        {NAV_ITEMS.filter(item => !item.permission || can(item.permission)).map(item => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
           return (
             <Link
@@ -58,6 +64,16 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      <div className="px-4 pb-2">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="w-full text-left px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
+        >
+          Sign out
+        </button>
+      </div>
 
       {/* Subscription Info */}
       <div className="p-4 border-t border-gray-200">

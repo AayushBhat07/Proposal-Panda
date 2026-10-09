@@ -6,22 +6,41 @@
  * Enhanced with loading, empty, error states, and state persistence
  */
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/state/authStore';
 import DashboardCard from '@/components/dashboard/DashboardCard';
 import TenderUpload from '@/components/dashboard/TenderUpload';
 import ProcessingState from '@/components/dashboard/ProcessingState';
 import Spinner from '@/components/ui/Spinner';
 import { saveToLocalStorage, getFromLocalStorage } from '@/services/storage/mockStorageService';
-import { MOCK_INTELLIGENCE_REPORT } from '@/lib/mock/mockIntelligenceReport';
 
 type UploadState = 'idle' | 'processing' | 'success' | 'error';
 type ProcessingStage = 'analyzing' | 'scoring' | 'finalizing';
 
+interface StoredReport {
+  id: string;
+  fileName: string;
+  uploadedAt: string;
+  type?: string;
+  summary?: { metadata?: { tenderTitle?: string } };
+  compliance?: { riskLevel?: string };
+}
+
 export default function DashboardPage() {
+  return (
+    <Suspense>
+      <DashboardContent />
+    </Suspense>
+  );
+}
+
+function DashboardContent() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const searchParams = useSearchParams();
+  const deniedPath = searchParams.get('denied');
+  const { user, can } = useAuthStore();
+  const [reports, setReports] = useState<StoredReport[]>([]);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [processingStage, setProcessingStage] = useState<ProcessingStage>('analyzing');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -36,8 +55,10 @@ export default function DashboardPage() {
       await new Promise(resolve => setTimeout(resolve, 800));
       
       // Check if user has any tender activity
-      const reports = getFromLocalStorage<any[]>('intelligenceReports');
-      setHasActivityData(Array.isArray(reports) && reports.length > 0);
+      const stored = getFromLocalStorage<StoredReport[]>('intelligenceReports');
+      const list = Array.isArray(stored) ? stored : [];
+      setReports(list.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)));
+      setHasActivityData(list.length > 0);
       
       setIsLoadingData(false);
     };
@@ -55,34 +76,29 @@ export default function DashboardPage() {
       const tenderId = `TENDER-${Date.now()}`;
       const tenderTitle = file.name.replace(/\.(pdf|docx)$/i, '');
 
-      // Simulate file upload delay
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Run the analysis pipeline (text extraction → local-model summary → compliance scoring)
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('tenderId', tenderId);
+      formData.append('tenderTitle', tenderTitle);
 
-      setProcessingStage('analyzing');
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      setProcessingStage('scoring');
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
+      // The stage indicator can't see inside the pipeline, so advance it on a timer.
+      const scoringTimer = setTimeout(() => setProcessingStage('scoring'), 4000);
+      const response = await fetch('/api/intelligence/run', { method: 'POST', body: formData });
+      clearTimeout(scoringTimer);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.details || data.error || 'Failed to process tender document.');
+      }
       setProcessingStage('finalizing');
-      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Use mock intelligence report with custom ID and metadata
       const reportWithId = {
         id: tenderId,
         fileName: file.name,
         uploadedAt: new Date().toISOString(),
-        ...MOCK_INTELLIGENCE_REPORT,
-        summary: {
-          ...MOCK_INTELLIGENCE_REPORT.summary,
-          metadata: {
-            ...MOCK_INTELLIGENCE_REPORT.summary.metadata,
-            tenderId,
-            tenderTitle,
-          },
-        },
+        ...data,
       };
-      
+
       saveToLocalStorage('intelligenceReports', reportWithId);
 
       // Store latest tender ID
@@ -91,9 +107,7 @@ export default function DashboardPage() {
       setUploadState('success');
       
       // Redirect to analysis view
-      setTimeout(() => {
-        router.push(`/tenders/${tenderId}/analysis`);
-      }, 1500);
+      router.push(`/tenders/${tenderId}/analysis`);
     } catch (error) {
       console.error('Processing error:', error);
       setUploadState('error');
@@ -125,11 +139,22 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {deniedPath && (
+        <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+          Your role can&apos;t open {deniedPath}.
+        </div>
+      )}
+
       {/* Upload Card */}
       <div className="grid grid-cols-3 gap-6 mb-6">
         <div className="col-span-2">
           <DashboardCard title="Upload New Tender" icon="☁️">
-            {uploadState === 'idle' && <TenderUpload onUpload={handleFileUpload} />}
+            {!can('tender.upload') && (
+              <p className="text-sm text-gray-600 py-12 text-center">
+                Your role can view analysed tenders but not upload new ones.
+              </p>
+            )}
+            {can('tender.upload') && uploadState === 'idle' && <TenderUpload onUpload={handleFileUpload} />}
             {uploadState === 'processing' && uploadedFile && (
               <ProcessingState fileName={uploadedFile.name} stage={processingStage} />
             )}
@@ -197,44 +222,26 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
                     <th className="pb-3 font-medium">TENDER ID / NAME</th>
-                    <th className="pb-3 font-medium">DIVISION</th>
+                    <th className="pb-3 font-medium">SOURCE</th>
                     <th className="pb-3 font-medium">DATE UPLOADED</th>
-                    <th className="pb-3 font-medium">STATUS</th>
+                    <th className="pb-3 font-medium">RISK</th>
                     <th className="pb-3 font-medium">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  <TenderActivityRow
-                    id="PWD-Maha-2023-44"
-                    name="Road Resurfacing - Wardha"
-                    division="Nagpur Division"
-                    date="Oct 23, 2023"
-                    status="Ready for Review"
-                    statusColor="green"
-                  />
-                  <TenderActivityRow
-                    id="MSRDC-Exp-092"
-                    name="Samruddhi Mahamarg Phase II"
-                    division="Aurangabad Division"
-                    date="Oct 24, 2023"
-                    status="Processing"
-                    statusColor="orange"
-                  />
-                  <TenderActivityRow
-                    id="BMC-StormWater-05"
-                    name="Drainage Upgrade - Dadar"
-                    division="Mumbai City"
-                    date="Oct 20, 2023"
-                    status="Archived"
-                    statusColor="gray"
-                  />
+                  {reports.map(report => (
+                    <TenderActivityRow
+                      key={report.id}
+                      id={report.id}
+                      name={report.summary?.metadata?.tenderTitle || report.fileName}
+                      division={report.type === 'generated' ? 'Generated' : 'Uploaded'}
+                      date={new Date(report.uploadedAt).toLocaleDateString()}
+                      status={`${report.compliance?.riskLevel ?? 'Unknown'} Risk`}
+                      statusColor={report.compliance?.riskLevel === 'Low' ? 'green' : report.compliance?.riskLevel === 'Medium' ? 'orange' : 'gray'}
+                    />
+                  ))}
                 </tbody>
               </table>
-            </div>
-            <div className="mt-4 text-center">
-              <button className="text-sm text-amber-900 hover:text-amber-800 font-medium">
-                View All →
-              </button>
             </div>
           </>
         ) : (

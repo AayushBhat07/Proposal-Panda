@@ -35,24 +35,16 @@ export const TENDER_STATUSES = {
 } as const;
 
 /**
- * User roles
- */
-export const USER_ROLES = {
-  ADMIN: 'Admin',
-  BID_WRITER: 'BidWriter',
-  REVIEWER: 'Reviewer',
-  EXECUTIVE: 'Executive',
-  EXTERNAL_CONSULTANT: 'ExternalConsultant',
-} as const;
-
-/**
- * AI Generation Configuration
- * Local LLM settings for Ollama integration
+ * Local model configuration (Ollama). Server-side only; override with env vars, see .env.example.
+ * - MODEL_NAME: long-form generation (tender chapters, foundation bids)
+ * - ANALYSIS_MODEL: tender summarisation during analysis
  */
 export const AI_CONFIG = {
-  OLLAMA_BASE_URL: 'http://localhost:11434',
-  MODEL_NAME: 'llama3:latest',
-  TIMEOUT_MS: 40000, // 40 seconds
+  OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+  MODEL_NAME: process.env.OLLAMA_BID_MODEL || 'llama3:latest',
+  ANALYSIS_MODEL: process.env.OLLAMA_ANALYSIS_MODEL || 'qwen2.5:3b-instruct',
+  CONTEXT_TOKENS: Number(process.env.OLLAMA_NUM_CTX) || 8192,
+  TIMEOUT_MS: Number(process.env.OLLAMA_TIMEOUT_MS) || 120000, // local CPU inference is slow
   MAX_RETRIES: 1,
   DEFAULT_INFERENCE: {
     temperature: 0.2,

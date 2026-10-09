@@ -70,7 +70,7 @@ export function useTenderCreation() {
       }
 
       // Create tender
-      const tender = await tenderService.createTender(input, user?.id);
+      const tender = await tenderService.createTender(input, user?.email);
       addTender(tender);
       setCreatedTenderId(tender.id);
 
@@ -116,7 +116,7 @@ export function useTenderCreation() {
         const document = await tenderService.uploadDocument(
           tenderId,
           file,
-          user?.id,
+          user?.email,
           (progress) => {
             setUploadProgress(prev => ({
               ...prev,

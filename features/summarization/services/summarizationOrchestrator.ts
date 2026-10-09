@@ -16,7 +16,7 @@ import * as path from 'path';
 
 /**
  * Summarize tender from file
- * Supports .txt, .md, and .docx (future)
+ * Supports .txt, .md, .docx and .pdf
  */
 export async function summarizeTenderFromFile(
   filePath: string,
@@ -31,7 +31,7 @@ export async function summarizeTenderFromFile(
   const ext = path.extname(filePath).toLowerCase();
   let fullText: string;
 
-  if (ext === '.docx') {
+  if (ext === '.docx' || ext === '.pdf') {
     fullText = await extractTextFromDocx(filePath);
   } else if (ext === '.txt' || ext === '.md') {
     fullText = extractTextFromPlainText(filePath);

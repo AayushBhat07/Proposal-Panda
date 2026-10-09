@@ -16,8 +16,8 @@ interface AnalysisTabsProps {
 
 const TABS = [
   { id: 'summary', label: 'Summary' },
-  { id: 'compliance', label: 'Compliance', badge: 4 },
-  { id: 'clauses', label: 'Clauses & Legal', badge: 12 },
+  { id: 'compliance', label: 'Compliance' },
+  { id: 'clauses', label: 'Clauses & Legal' },
   { id: 'boq', label: 'BOQ Insights' },
   { id: 'metadata', label: 'Metadata' },
 ];
@@ -75,16 +75,6 @@ export default function AnalysisTabs({ activeTab, onTabChange, children }: Analy
             `}
           >
             {tab.label}
-            {tab.badge && (
-              <span
-                className={`ml-2 px-2 py-0.5 rounded text-xs ${
-                  activeTab === tab.id ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-600'
-                }`}
-                aria-label={`${tab.badge} items`}
-              >
-                {tab.badge}
-              </span>
-            )}
           </button>
         ))}
       </div>
