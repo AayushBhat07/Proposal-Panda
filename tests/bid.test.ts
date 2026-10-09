@@ -119,7 +119,9 @@ test('drops queries that misquote the tender, then needs five left', () => {
       '4. Will site access be available through the monsoon?',
     ].join('\n')
   );
-  assert.match(findDraftProblem(MODEL_SECTIONS.queries, cleaned, facts) ?? '', /only 4/);
+  // Four good queries are kept; fewer than three is withheld.
+  assert.equal(findDraftProblem(MODEL_SECTIONS.queries, cleaned, facts), undefined);
+  assert.match(findDraftProblem(MODEL_SECTIONS.queries, cleaned.split('\n').slice(0, 2).join('\n'), facts) ?? '', /only 2/);
 });
 
 test('rejects a programme that lays masonry before the frame', () => {
@@ -276,4 +278,8 @@ test('road works get only road items, and IS codes with a year are redacted whol
   assert.equal(methodologyItems(text, 'infrastructure', 'Construction of Service road'), 'earthwork and foundations; roads; drainage');
   assert.equal(redactUnknownStandards('concrete as per IS 456-2000', new Set()), 'concrete as per [IS code as per tender]');
   assert.equal(tidyDraft('Plan.\n\nPlease note that this section only provides a general outline.'), 'Plan.');
+});
+
+test('grades printed with a Unicode hyphen count as mentioned', () => {
+  assert.deepEqual([...gradesIn('80 mm thick C.C. paver block of M‐35 grade')], ['M35']);
 });
