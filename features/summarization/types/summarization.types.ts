@@ -83,6 +83,10 @@ export interface TenderSummary {
     nitReference?: string;
     /** Completion period in months found in the document, if any */
     completionMonths?: number;
+    /** EMD as printed, e.g. "Rs. 27,24,900", if found */
+    emdAmount?: string;
+    /** Estimated cost put to tender as printed, if found */
+    estimatedCost?: string;
     /**
      * Ollama model tag; "<model> (+N extractive)" when N sections fell back;
      * 'extractive-fallback' when no local model was reachable
