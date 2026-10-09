@@ -266,3 +266,14 @@ test('road, building and maintenance works get their own programmes', () => {
   const road = 'Month 1: Mobilisation and survey\nMonth 2: Earthwork and GSB\nMonth 3: WMM, bituminous surfacing, handover';
   assert.equal(findDraftProblem(INFRASTRUCTURE_PROGRAMME, road, facts), undefined);
 });
+
+test('a one-page notice that names no items gets the common items, without GRIHA', () => {
+  assert.doesNotMatch(methodologyItems('Tender notice. EMD by demand draft.'), /GRIHA/);
+});
+
+test('road works get only road items, and IS codes with a year are redacted whole', () => {
+  const text = 'Service road. NP3 class RCC pipes. Earthwork. Bituminous macadam. Flooring as per general conditions.';
+  assert.equal(methodologyItems(text, 'infrastructure', 'Construction of Service road'), 'earthwork and foundations; roads; drainage');
+  assert.equal(redactUnknownStandards('concrete as per IS 456-2000', new Set()), 'concrete as per [IS code as per tender]');
+  assert.equal(tidyDraft('Plan.\n\nPlease note that this section only provides a general outline.'), 'Plan.');
+});

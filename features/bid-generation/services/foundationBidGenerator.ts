@@ -54,11 +54,17 @@ const METHOD_ITEMS: Array<[string, RegExp]> = [
   ['drainage', /drain|hume pipe|\bNP-?\s?[234]\b|cross drainage/i],
   ['GRIHA / green-building measures', /GRIHA|green[- ]building/i],
 ];
-const METHOD_LIST = METHOD_ITEMS.map(([item]) => item).join('; ');
+/** When the text names no item (a one-page notice), the common building items; GRIHA only if the tender asks. */
+const METHOD_LIST = METHOD_ITEMS.map(([item]) => item).filter(item => !item.startsWith('GRIHA')).join('; ');
 
-/** The methodology items this tender names, in build order (all of them when the text names none). */
-export function methodologyItems(tenderText: string): string {
-  const named = METHOD_ITEMS.filter(([, pattern]) => pattern.test(tenderText)).map(([item]) => item);
+/** Items that belong to roads, bridges, drains and walls; a building's items there come from general conditions. */
+const INFRASTRUCTURE_ITEMS = new Set(['earthwork and foundations', 'roads', 'bridges and culverts', 'drainage', 'GRIHA / green-building measures']);
+
+/** The methodology items this tender names, in build order (the common ones when the text names none). */
+export function methodologyItems(tenderText: string, worksType?: WorksType, nameOfWork = ''): string {
+  const named = METHOD_ITEMS.filter(([, pattern]) => pattern.test(tenderText))
+    .map(([item]) => item)
+    .filter(item => worksType !== 'infrastructure' || INFRASTRUCTURE_ITEMS.has(item) || (item === 'masonry' && /\bwall\b/i.test(nameOfWork)));
   return named.length ? named.join('; ') : METHOD_LIST;
 }
 
@@ -96,7 +102,7 @@ const QUOTED_TERMS =
 const BAD_QUERY =
   /^(?=.*10\s*CC)(?!.*(?:price|escalat|variation))|security deposit.{0,60}recover|recover.{0,60}security deposit|late fee|provision for (?:any )?(?:price variation|escalation)|how (?:will|shall|should) the contractor|absence of|\black(?:s|ing)? (?:a|any|clear)|not (?:clearly )?(?:mentioned|specified|provided|defined)|does not (?:include|contain|mention|specify|provide)/i;
 
-const IS_CODE = /\bIS[:\s]*(\d{3,5})(?:\s*\(?\s*(?:Part|Pt\.?)\s*\d+\s*\)?)?(?:\s*:\s*\d{4})?/g;
+const IS_CODE = /\bIS[:\s]*(\d{3,5})(?:\s*\(?\s*(?:Part|Pt\.?)\s*\d+\s*\)?)?(?:\s*[:\-–]\s*\d{4})?/g;
 
 /** IS code numbers mentioned in a text, e.g. "IS 2185 (Part 3)" -> "2185". */
 export function isCodesIn(text: string): Set<string> {
@@ -345,6 +351,7 @@ export function tidyDraft(content: string): string {
   return content
     .replace(/^\s*Here is[^\n]*:\s*\n/i, '')
     .replace(/\n\s*\**Note\b[^\n]*(?:\n(?!\s*\n)[^\n]*)*\s*$/i, '')
+    .replace(/\n\s*(?:Please note|Note that|This section (?:only )?provides|The above (?:is|are|methodology))[^\n]*(?:\n(?!\s*\n)[^\n]*)*\s*$/i, '')
     .trim();
 }
 
@@ -481,10 +488,10 @@ export const INFRASTRUCTURE_PROGRAMME: ModelSection = {
   ...MODEL_SECTIONS.programme,
   brief:
     'A month-by-month work programme. Write exactly one line per month, from "Month 1:" to "Month {completionMonths}:", ' +
-    'each listing the activities the tender names (for example survey, earthwork, sub-base and base layers, ' +
-    'surfacing, culverts and drains, structures), in the order they can be built, with mobilisation in Month 1, ' +
-    'bituminous and earthwork layers outside the monsoon (June to September), and testing and handover only in the ' +
-    'last month. Do not add building stages (RCC frame, masonry, flooring) the tender does not name. Output only those lines.',
+    'each listing only activities the tender itself names, in the order they can be built, with mobilisation in ' +
+    'Month 1, work affected by rain kept outside June to September, and testing and handover only in the last ' +
+    'month. Do not add building stages (RCC frame, masonry, flooring) or road layers the tender does not name. ' +
+    'Output only those lines.',
   check: (content, { months }) => {
     const plan = parseProgramme(content);
     if (plan.size < Math.ceil((months ?? 2) / 2)) return `it plans only ${plan.size} month(s)`;
@@ -613,9 +620,11 @@ export async function generateFoundationBid(
     hasRoad: kind === 'works' && /\broad\b/i.test(`${report.summary.technicalScope} ${report.summary.executiveSummary}`),
     keyTerms: report.summary.metadata.keyTerms,
     sourceText: report.summary.sourceText,
-    isCodes: isCodesIn(
-      [report.summary.sourceText, report.summary.technicalScope, report.summary.eligibilityAndClauses].join('\n')
-    ),
+    // Codes found anywhere in the tender at analysis time; older reports only have the excerpt and summaries.
+    isCodes: new Set([
+      ...(report.summary.metadata.standards?.isCodes ?? []),
+      ...isCodesIn([report.summary.sourceText, report.summary.technicalScope, report.summary.eligibilityAndClauses].join('\n')),
+    ]),
     nitRef,
     tenderTitle,
     kind,
@@ -635,7 +644,10 @@ export async function generateFoundationBid(
     }
     const { id, title, cover, brief, needsSource, maxTokens, finish } = section;
     const meta = { id, title, cover };
-    const fitted = fitBriefToTender(brief, tenderText).replace('{methodItems}', methodologyItems(`${tenderTitle}\n${tenderText}`));
+    const fitted = fitBriefToTender(brief, tenderText).replace(
+      '{methodItems}',
+      methodologyItems(`${tenderTitle}\n${tenderText}`, report.summary.metadata.worksType, tenderTitle)
+    );
     const task = `Write the "${section.title}" section of the bid for ${company.legalName}. ${fitted.replace(
       '{completionMonths}',
       String(months ?? 'N (the completion period in the tender)')
@@ -660,7 +672,7 @@ export async function generateFoundationBid(
     }
     if (!problem) {
       content = redactUnknownStandards(content, facts.isCodes ?? new Set());
-      content = redactUnknownGrades(content, gradesIn(tenderText));
+      content = redactUnknownGrades(content, new Set([...(report.summary.metadata.standards?.grades ?? []), ...gradesIn(tenderText)]));
     }
     sections.push({
       ...meta,
