@@ -187,6 +187,9 @@ export interface ComplianceScoringInput {
       modelUsed: string;
       totalChunks: number;
       processingTimeMs: number;
+      completionMonths?: number;
+      /** Key contract terms quoted word for word from the tender text */
+      keyTerms?: Array<{ label: string; text: string }>;
     };
   };
 

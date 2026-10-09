@@ -95,9 +95,11 @@ async function performComplianceAnalysis(
   const technicalRisks = analyzeTechnicalRisks(summary, verbose);
   const legalRisks = analyzeLegalRisks(summary, verbose);
   const submissionRisks = analyzeSubmissionRisks(summary, verbose);
+  const contractRisks = analyzeContractTerms(summary);
 
   // Aggregate identified risks
   const identifiedRisks: IdentifiedRisk[] = [
+    ...contractRisks.risks,
     ...financialRisks.risks,
     ...technicalRisks.risks,
     ...legalRisks.risks,
@@ -109,6 +111,7 @@ async function performComplianceAnalysis(
   baselineScore -= technicalRisks.scorePenalty;
   baselineScore -= legalRisks.scorePenalty;
   baselineScore -= submissionRisks.scorePenalty;
+  baselineScore -= contractRisks.scorePenalty;
 
   // Apply conservative bias for government tenders
   if (input.options?.conservativeBias !== false) {
@@ -120,14 +123,14 @@ async function performComplianceAnalysis(
 
   // Determine risk categories
   const riskCategories = {
-    financial: financialRisks.level,
+    financial: higherRisk(financialRisks.level, contractRisks.level),
     technical: technicalRisks.level,
     legal: legalRisks.level,
     submission: submissionRisks.level,
   };
 
   // Determine overall risk level
-  const riskLevel = calculateOverallRiskLevel(complianceScore, riskCategories);
+  const riskLevel = calculateOverallRiskLevel(riskCategories);
 
   // Identify missing or weak clauses
   const missingOrWeakClauses = identifyMissingClauses(summary);
@@ -441,25 +444,71 @@ function analyzeSubmissionRisks(
   return { risks, scorePenalty, level };
 }
 
-/**
- * Calculate overall risk level based on score and categories
- */
-function calculateOverallRiskLevel(
-  score: number,
-  categories: Record<string, RiskLevel>
-): RiskLevel {
-  // Count high/medium risk categories
-  const highRiskCount = Object.values(categories).filter((r) => r === 'High').length;
-  const mediumRiskCount = Object.values(categories).filter((r) => r === 'Medium').length;
+const RISK_ORDER: RiskLevel[] = ['Low', 'Medium', 'High'];
 
-  // Overall risk logic
-  if (score < 60 || highRiskCount >= 2) {
-    return 'High';
-  } else if (score < 75 || highRiskCount >= 1 || mediumRiskCount >= 2) {
-    return 'Medium';
-  } else {
-    return 'Low';
+function higherRisk(a: RiskLevel, b: RiskLevel): RiskLevel {
+  return RISK_ORDER[Math.max(RISK_ORDER.indexOf(a), RISK_ORDER.indexOf(b))];
+}
+
+/**
+ * Overall risk level from the category levels, so the headline never contradicts its own breakdown.
+ * The numeric score only summarises penalties and does not set the level.
+ */
+export function calculateOverallRiskLevel(categories: Record<string, RiskLevel>): RiskLevel {
+  const levels = Object.values(categories);
+  const high = levels.filter((r) => r === 'High').length;
+  const medium = levels.filter((r) => r === 'Medium').length;
+  if (high >= 2) return 'High';
+  if (high === 1 || medium >= 2) return 'Medium';
+  return 'Low';
+}
+
+/**
+ * Risks from the contract terms quoted word for word from the tender (summary.metadata.keyTerms),
+ * so they don't depend on how the summary was worded.
+ */
+export function analyzeContractTerms(
+  summary: ComplianceScoringInput['summary']
+): { risks: IdentifiedRisk[]; scorePenalty: number; level: RiskLevel } {
+  const terms = Object.fromEntries((summary.metadata.keyTerms ?? []).map((t) => [t.label, t.text]));
+  const months = summary.metadata.completionMonths;
+  const risks: IdentifiedRisk[] = [];
+  let scorePenalty = 0;
+
+  const priceVariation = terms['Price variation (Clause 10CC)'];
+  if (priceVariation && /\bnot\b[^.]{0,30}\bappl/i.test(priceVariation)) {
+    const long = months !== undefined && months >= 12;
+    risks.push({
+      category: 'Financial',
+      description:
+        `The tender states: "${priceVariation}" The quoted rates must absorb any increase in material and labour ` +
+        `costs${months ? ` over the ${months}-month completion period` : ''}.`,
+      sourceSection: 'tender text',
+    });
+    scorePenalty += long ? 10 : 5;
   }
+
+  const delay = terms['Compensation for delay (Clause 2)'];
+  if (delay) {
+    risks.push({
+      category: 'Financial',
+      description: `The tender states: "${delay}"`,
+      sourceSection: 'tender text',
+    });
+    scorePenalty += 5;
+  }
+
+  const advance = terms['Mobilisation advance'];
+  if (advance && /bank guarantee|\bBG\b/i.test(advance)) {
+    risks.push({
+      category: 'Financial',
+      description: `The tender states: "${advance}" Drawing the advance needs bank guarantee limits.`,
+      sourceSection: 'tender text',
+    });
+  }
+
+  const level: RiskLevel = scorePenalty >= 15 ? 'High' : scorePenalty >= 5 ? 'Medium' : 'Low';
+  return { risks, scorePenalty, level };
 }
 
 /**
