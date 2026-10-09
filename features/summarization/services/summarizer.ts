@@ -34,18 +34,32 @@ export function findCompletionMonths(text: string): number | undefined {
   return match ? Number(match[1]) : undefined;
 }
 
+/** Finds a rupee figure after a label, e.g. "Earnest Money: Rs. 27,24,900" -> "Rs. 27,24,900". */
+function findRupees(text: string, label: RegExp): string | undefined {
+  const match = text.match(
+    new RegExp(`${label.source}[^0-9\\n]{0,40}?(?:Rs\\.?|₹|INR)\\s*([\\d,]+(?:\\.\\d+)?(?:\\s*(?:lakhs?|crores?))?)`, 'i')
+  );
+  return match ? `Rs. ${match[1].replace(/[,.]+$/, '')}` : undefined;
+}
+
+export const findEmdAmount = (text: string) => findRupees(text, /(?:earnest money(?: deposit)?|\bEMD\b)/);
+export const findEstimatedCost = (text: string) => findRupees(text, /estimated cost(?: put to tender)?/);
+
 const SOURCE_HEAD_CHARS = 4000;
 const SPEC_KEYWORDS = ['specification', 'grade', 'm20', 'm25', 'm30', 'fe500', 'fe 500', 'is:', 'is ', 'morth',
   'cpwd spec', 'rmc', 'griha', 'quality', 'testing', 'technical staff', 'plant', 'machinery'];
 
 /** NIT head (key data) plus the chunks most about specs and resources, capped for Llama 3's 8k context. */
-function selectSourceText(fullText: string, chunks: TextChunk[]): string {
+export function selectSourceText(fullText: string, chunks: TextChunk[]): string {
   let text = fullText.slice(0, SOURCE_HEAD_CHARS);
+  // Chunks are rebuilt with single spaces, so locate them in a whitespace-collapsed copy.
+  const flat = fullText.replace(/\s+/g, ' ');
+  const headEnd = text.replace(/\s+/g, ' ').length;
   for (const chunk of chunks) {
     if (text.length >= SOURCE_TEXT_CHARS) break;
     const lower = chunk.text.toLowerCase();
-    const position = fullText.indexOf(chunk.text.slice(0, 200));
-    if (position !== -1 && position < SOURCE_HEAD_CHARS) continue; // already in the head
+    const position = flat.indexOf(chunk.text.slice(0, 200));
+    if (position !== -1 && position < headEnd) continue; // starts inside the head
     if (SPEC_KEYWORDS.some(k => lower.includes(k))) text += `\n...\n${chunk.text}`;
   }
   return text.slice(0, SOURCE_TEXT_CHARS);
@@ -142,6 +156,8 @@ export class TenderSummarizationService {
           generatedAt: new Date(),
           nitReference: findNitReference(input.fullText),
           completionMonths: findCompletionMonths(input.fullText),
+          emdAmount: findEmdAmount(input.fullText),
+          estimatedCost: findEstimatedCost(input.fullText),
           modelUsed: !this.useLocalModel
             ? 'extractive-fallback'
             : this.fallbackSections > 0
