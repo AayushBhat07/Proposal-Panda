@@ -6,23 +6,24 @@
 
 import type { TenderSummary } from '@/features/summarization/types/summarization.types';
 
-const SECTIONS: Array<{ key: keyof Omit<TenderSummary, 'metadata'>; title: string }> = [
+const SECTIONS: Array<{ key: keyof Omit<TenderSummary, 'metadata' | 'sourceText'>; title: string }> = [
   { key: 'executiveSummary', title: 'Executive Summary' },
   { key: 'commercialTerms', title: 'Commercial Terms' },
   { key: 'datesAndObligations', title: 'Dates and Obligations' },
   { key: 'technicalScope', title: 'Technical Scope' },
   { key: 'legalHighlights', title: 'Legal Highlights' },
   { key: 'attentionPoints', title: 'Attention Points' },
+  { key: 'eligibilityAndClauses', title: 'Eligibility and Key Clauses' },
 ];
 
 export default function SummaryPanel({ summary }: { summary: TenderSummary }) {
   const modelUsed = summary.metadata?.modelUsed;
   return (
     <div className="p-6 space-y-6">
-      {modelUsed === 'extractive-fallback' && (
+      {modelUsed?.includes('extractive') && (
         <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-900">
-          The local analysis model wasn&apos;t reachable, so these sections are keyword extracts from the document.
-          Start Ollama and re-upload for model summaries.
+          Some or all sections are keyword extracts because the local analysis model didn&apos;t respond.
+          Check that Ollama is running and re-upload for full model summaries.
         </div>
       )}
       {SECTIONS.map(({ key, title }) => (

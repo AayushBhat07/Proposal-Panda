@@ -62,13 +62,29 @@ export interface TenderSummary {
   attentionPoints: string;
 
   /**
+   * Eligibility criteria and key contract clauses
+   * - Similar works, turnover, solvency, bid capacity
+   * - Delay compensation and cap, price variation, advances
+   * - Dispute resolution
+   */
+  eligibilityAndClauses?: string;
+
+  /** Start of the extracted tender text, so bid drafting can cite exact terms. */
+  sourceText?: string;
+
+  /**
    * Metadata
    */
   metadata: {
     tenderId: string;
     tenderTitle: string;
     generatedAt: Date;
-    /** Ollama model tag, or 'extractive-fallback' when no local model was reachable */
+    /** NIT / tender reference number found in the document, if any */
+    nitReference?: string;
+    /**
+     * Ollama model tag; "<model> (+N extractive)" when N sections fell back;
+     * 'extractive-fallback' when no local model was reachable
+     */
     modelUsed: string;
     totalChunks: number;
     processingTimeMs: number;

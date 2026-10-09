@@ -7,7 +7,6 @@
 
 import { AI_CONFIG } from '@/lib/config/constants';
 import { checkLlmHealth, generateWithLlmSafe } from '@/lib/llm/ollama';
-
 import type {
   TenderDocumentInput,
   TenderSummary,
@@ -15,6 +14,17 @@ import type {
   SummarizationResult,
   TextChunk,
 } from '../types/summarization.types';
+
+/** How much raw tender text the report keeps for bid drafting (~2.5k tokens; Llama 3 has an 8k context). */
+const SOURCE_TEXT_CHARS = 10000;
+
+/** Finds the NIT / tender reference, e.g. "NIT No. 14/EE/PCD-II/2026-27". */
+export function findNitReference(text: string): string | undefined {
+  const match = text.match(
+    /\b(?:N\.?I\.?T\.?|(?:e-)?Tender|Bid)\s*(?:No|Number|Ref(?:erence)?)\.?\s*[:\-–]?\s*([A-Z0-9][A-Z0-9/\-.()]*\d[A-Z0-9/\-.()]*)/i
+  );
+  return match?.[1].replace(/[.)]+$/, '');
+}
 
 /**
  * Tender summarization service (local Qwen model via Ollama)
@@ -29,6 +39,7 @@ import type {
 export class TenderSummarizationService {
   private model: string;
   private useLocalModel = false;
+  private fallbackSections = 0;
   private maxTokensPerChunk: number;
   private overlapTokens: number;
 
@@ -73,6 +84,7 @@ export class TenderSummarizationService {
       // Sequential on purpose: a local Ollama serves one request at a time.
       const health = await checkLlmHealth(this.model);
       this.useLocalModel = health.available;
+      this.fallbackSections = 0;
       if (!health.available) {
         diagnostics.warnings.push(
           `Local model unavailable (${health.errorMessage}); used extractive fallback summaries`
@@ -85,6 +97,7 @@ export class TenderSummarizationService {
       const technicalScope = await this.generateTechnicalScope(chunks);
       const legalHighlights = await this.generateLegalHighlights(chunks);
       const attentionPoints = await this.generateAttentionPoints(chunks);
+      const eligibilityAndClauses = await this.generateEligibilityAndClauses(chunks);
 
       const processingTimeMs = Date.now() - startTime;
       diagnostics.processingTimeMs = processingTimeMs;
@@ -96,11 +109,18 @@ export class TenderSummarizationService {
         technicalScope,
         legalHighlights,
         attentionPoints,
+        eligibilityAndClauses,
+        sourceText: input.fullText.slice(0, SOURCE_TEXT_CHARS),
         metadata: {
           tenderId: input.tenderId,
           tenderTitle: input.tenderTitle,
           generatedAt: new Date(),
-          modelUsed: this.useLocalModel ? this.model : 'extractive-fallback',
+          nitReference: findNitReference(input.fullText),
+          modelUsed: !this.useLocalModel
+            ? 'extractive-fallback'
+            : this.fallbackSections > 0
+              ? `${this.model} (+${this.fallbackSections} extractive)`
+              : this.model,
           totalChunks: chunks.length,
           processingTimeMs,
         },
@@ -305,6 +325,24 @@ export class TenderSummarizationService {
   }
 
   /**
+   * Eligibility criteria and the contract clauses that decide whether and how to bid.
+   */
+  private async generateEligibilityAndClauses(chunks: TextChunk[]): Promise<string> {
+    const keywords = ['eligib', 'similar work', 'turnover', 'solvency', 'bid capacity', 'compensation', 'delay',
+      'penalty', '10cc', 'price variation', 'escalation', 'advance', 'arbitration', 'dispute'];
+    const relevantChunks = chunks.filter(c => keywords.some(k => c.text.toLowerCase().includes(k))).slice(0, 6);
+    const combinedText = (relevantChunks.length > 0 ? relevantChunks : chunks.slice(0, 5)).map(c => c.text).join('\n\n');
+
+    return await this.summarize(
+      combinedText,
+      'Extract as bullet points: eligibility criteria (similar works thresholds, average annual turnover, solvency, bid capacity formula); ' +
+        'compensation for delay and its cap; price variation / escalation clause (e.g. 10CC) and whether it applies; ' +
+        'mobilisation or secured advance; security deposit and performance guarantee; dispute resolution, arbitration and venue. ' +
+        'Quote amounts, percentages and clause numbers exactly as written.'
+    );
+  }
+
+  /**
    * Summarize one section with the local model; fall back to extraction on any failure.
    */
   private async summarize(text: string, instruction: string): Promise<string> {
@@ -314,12 +352,14 @@ export class TenderSummarizationService {
         systemPrompt:
           'You summarise Indian public-works tender documents for a contractor. ' +
           'Only state facts found in the provided text. If something is not in the text, say "Not specified in the tender." ' +
-          'Answer in plain prose or short bullet points, under 150 words, with no preamble.',
+          'Quote every amount, percentage, period, clause number and named specification (e.g. M25, Fe500D, MoRTH) exactly as written. ' +
+          'Answer in plain prose or short bullet points, under 250 words, with no preamble.',
         // ~4 chars per token; leave room in the context window for the prompt and answer.
         userPrompt: `Task: ${instruction}\n\nTender text:\n${text.slice(0, (AI_CONFIG.CONTEXT_TOKENS - 1024) * 3)}`,
-        inferenceOptions: { temperature: 0.1, max_tokens: 400 },
+        inferenceOptions: { temperature: 0.1, max_tokens: 600 },
       });
       if (result.success && result.data.content) return result.data.content;
+      this.fallbackSections++;
       console.warn(`[Summarization] Local model call failed, using extractive fallback: ${
         result.success ? 'empty response' : result.error.message
       }`);

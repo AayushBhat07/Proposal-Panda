@@ -22,3 +22,12 @@
 - Removed Generate Tender page/API, the Llama chapter tender generator (features/ai-generation), unused tender-management, test-tenders.
 - Models: Llama 3 (bids) + Qwen (analysis) only. BART naming and phi3/mock instruction model removed; compliance is rules (`modelUsed: 'rules'`). Ollama client moved to lib/llm/ollama.ts.
 - Foundation bid follows CPWD two-bid format: Cover I (transmittal, checklist, declarations/affidavit, similar works + bid capacity 2·A·N−B, scope, methodology/work programme, compliance, pre-bid queries) and Cover II (percentage/item-rate proforma). Narrative = Llama, proformas = bidTemplates.ts. Reference: IIT Kanpur IWD CPWD-pattern NIT (Forms 5.1–5.13).
+
+## Round 3 (2026-10-09, after first real Ollama run on M3 Pro)
+Real run: analysis 32 s (qwen2.5:3b), bid 89 s (llama3), figures faithful, bid content unsafe. Fixes:
+- NIT reference extracted from the document (`findNitReference`); internal tenderId never reaches the bid.
+- New summary section "Eligibility and Key Clauses"; summaries 250 words and quote figures/specs exactly.
+- Report keeps the first 10k chars of tender text; methodology, compliance and pre-bid queries see it.
+- Prompts: bidder named, figures copied, programme in Month 1..N over the tender's completion period,
+  no commitments beyond tender conditions, pre-bid queries skip what the tender already answers.
+- Per-section fallback counted in modelUsed; Integrity Pact in checklist; force-majeure flag reworded.
