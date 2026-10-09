@@ -8,6 +8,8 @@ export interface BidSection {
   /** 'model' = drafted by the local LLM, 'template' = standard CPWD-style proforma with placeholders */
   source: 'model' | 'template';
   content: string;
+  /** Set when a person has edited the drafted content */
+  editedAt?: string;
 }
 
 /** First-draft ("foundation") bid built from an analysed tender. */
