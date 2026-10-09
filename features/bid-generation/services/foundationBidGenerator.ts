@@ -29,7 +29,28 @@ export interface DraftFacts {
   hasRoad?: boolean;
   /** IS code numbers that appear in the tender text or analysis */
   isCodes?: Set<string>;
+  /** Key contract terms quoted from the tender text */
+  keyTerms?: Array<{ label: string; text: string }>;
+  sourceText?: string;
 }
+
+/** Removes lines that match, then renumbers the numbered ones 1, 2, 3... */
+export function dropLines(content: string, pattern: RegExp): string {
+  let n = 0;
+  return content
+    .split('\n')
+    .filter(line => !pattern.test(line))
+    .map(line => line.replace(/^(\s*)\d+([.)]\s)/, (_, indent: string, sep: string) => `${indent}${++n}${sep}`))
+    .join('\n');
+}
+
+/** Contract terms the compliance block quotes from the tender, so the model's own lines on them are dropped. */
+const QUOTED_TERMS =
+  /security deposit|mobili[sz]ation|secured advance|compensation for delay|10\s*CC|price variation|escalation|defect liability|\bcess\b|^\W*\[as per enclosed registration certificates\]\W*$/i;
+
+/** Pre-bid queries that misquote the tender or ask what it already answers. */
+const BAD_QUERY =
+  /^(?=.*10\s*CC)(?!.*(?:price|escalat|variation))|security deposit.{0,60}recover|recover.{0,60}security deposit|late fee|absence of|\black(?:s|ing)? (?:a|any|clear)|not (?:clearly )?(?:mentioned|specified|provided|defined)|does not (?:include|contain|mention|specify|provide)/i;
 
 const IS_CODE = /\bIS[:\s]*(\d{3,5})(?:\s*\(?\s*(?:Part|Pt\.?)\s*\d+\s*\)?)?(?:\s*:\s*\d{4})?/g;
 
@@ -97,6 +118,8 @@ type ModelSection = Omit<BidSection, 'content' | 'source'> & {
   brief: string;
   needsSource?: boolean;
   maxTokens?: number;
+  /** Deterministic cleanup before the checks, e.g. dropping lines the model may not write */
+  clean?: (content: string) => string;
   check?: (content: string, facts: DraftFacts) => string | undefined;
   finish?: (content: string, facts: DraftFacts) => string;
 };
@@ -148,12 +171,17 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'text gives for that item (quote them as written, e.g. MoRTH layers and carriageway width for roads, mix design ' +
       'standard and RMC for concrete), the sequence of work, and the physical or laboratory tests for that item. ' +
       'Never invent materials or methods the tender does not state, and never expand an abbreviation unless the ' +
-      'tender text does. "Earthwork and foundations" means the building foundations, not the road. ' +
+      'tender text does. "Earthwork and foundations" means the building foundations, not the road; GSB, WMM, DBM and ' +
+      'BC belong only to the road. Give no dimensions, depths or thicknesses unless the tender text states them. ' +
       'Then one paragraph on safety and one line ' +
       '"Key technical staff and plant: [to be listed]". Do not write a work programme. ' +
       'Do not repeat text between items and do not end with a note or disclaimer.',
     needsSource: true,
     maxTokens: 1600,
+    check: (content, { sourceText = '' }) => {
+      const depth = content.match(/depth of (\d+(?:\.\d+)?)\s*m/i);
+      return depth && !sourceText.includes(depth[1]) ? `it invents a depth ("${depth[0]}")` : undefined;
+    },
   },
   programme: {
     id: 'work-programme',
@@ -162,7 +190,7 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     brief:
       'A month-by-month work programme. Write exactly one line per month, from "Month 1:" to "Month {completionMonths}:", ' +
       'each followed by the activities in that month. Follow the build order: mobilisation, foundations, RCC frame ' +
-      'floor by floor (about a third of the period for a multi-storey frame), masonry, services rough-in, ' +
+      'floor by floor, masonry, services rough-in, ' +
       'waterproofing, flooring and finishes, services fixtures, then testing and handover. Schedule any external ' +
       'road and drainage works in their own months outside the monsoon (June to September), alongside the building ' +
       'work. Output only those lines.',
@@ -185,15 +213,15 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     title: 'Compliance with Tender Conditions',
     cover: 'technical',
     brief:
-      'A clause-by-clause compliance statement: for each submission, EMD, performance security, eligibility and ' +
+      'A numbered compliance statement: for each submission, EMD, eligibility, technical, quality, GRIHA, labour and ' +
       'legal requirement found in the analysis, one line stating how the bidder complies. Leave out compensation ' +
-      'for delay, price variation, advances and security deposit: those are listed separately. ' +
+      'for delay, price variation, advances, security deposit, defect liability and cess: those terms are quoted ' +
+      'from the NIT separately. ' +
       'Do not restate the bidder\'s GSTIN, PAN or any registration; write "[as per enclosed registration certificates]". ' +
       'For eligibility criteria (similar works, turnover, no-loss, solvency, bid capacity) never assert the bidder ' +
       'meets them: write "Supporting documents enclosed at [Annexure __]; to be confirmed from company records." ' +
       'Never mark a clause as not applicable. Never comment on the estimated cost, budget or price: the price is ' +
-      'quoted only in Cover II. The department, not the bidder, deducts cess and recovers deposits; never say the ' +
-      'bidder submits or pays a security deposit. Address each flagged risk and submission trap factually. Do not comment on clauses the tender does not contain.',
+      'quoted only in Cover II. Address each flagged risk and submission trap factually. Do not comment on clauses the tender does not contain.',
     needsSource: true,
     check: (content, { clauses }) => {
       const wrong = [...content.matchAll(/Clause\s*(\d+[A-Z]*)\b[^\n]{0,80}?\bdoes not apply/gi)]
@@ -201,7 +229,12 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
         .find(c => !new RegExp(`\\b${c}\\b[^\\n]{0,80}?does not apply`, 'i').test(clauses));
       return wrong ? `it says Clause ${wrong} does not apply, which the tender analysis does not` : undefined;
     },
-    finish: (content, { clauses, delayCompensation }) => {
+    clean: content => dropLines(content, QUOTED_TERMS),
+    finish: (content, { clauses, delayCompensation, keyTerms = [] }) => {
+      if (keyTerms.length) {
+        const quoted = keyTerms.map(t => `- ${t.label}: "${t.text}"`).join('\n');
+        return `${content}\n\nKey contract terms (quoted from the NIT; accepted as stated):\n${quoted}`;
+      }
       const lines = keyClauseLines(clauses, delayCompensation);
       return lines.length
         ? `${content}\n\nKey contract clauses (from the tender analysis; verify against the NIT):\n${lines.map(l => `- ${l}`).join('\n')}`
@@ -220,18 +253,17 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'approvals or certification costs (e.g. GRIHA, RMC plant approval), site access and utilities. ' +
       'Never claim the tender lacks something; only ask about what is unclear. ' +
       'Keep each query to one or two sentences.',
+    clean: content => dropLines(content, BAD_QUERY),
     check: content => {
       const count = content.match(/^\s*\d+[.)]\s/gm)?.length ?? 0;
-      if (count < 5) return `it has only ${count} numbered queries`;
-      const claim = content.match(/absence of|\black(?:s|ing)? (?:a|any|clear)|not (?:clearly )?(?:mentioned|specified|provided|defined)|does not (?:include|contain|mention|specify|provide)/i);
-      return claim ? `it says the tender lacks something ("${claim[0]}")` : undefined;
+      return count < 5 ? `it has only ${count} usable numbered queries` : undefined;
     },
   },
 };
 
 /** Statements a draft must never make: they are eligibility facts only company records can supply. */
 const INVENTED_CLAIMS =
-  /\b(?:our|the) (?:company|firm)\b[^.]{0,40}\b(?:has|have|had) (?:successfully )?(?:completed|executed)|\bturnover\b[^.]{0,80}\bwas (?:Rs|INR|₹)|\b(?:our|its) [^.]{0,30}\bturnover\b[^.]{0,60}\b(?:is|of) (?:Rs|INR|₹)|has not (?:incurred|suffered) (?:any )?loss|(?:have|has|possess) (?:the )?(?:necessary|requisite|adequate) (?:technical |financial )?(?:capabilit|capacit|experience)|we (?:meet|fulfil|fulfill|satisfy) (?:all )?(?:the )?eligibility|\bour (?:technical )?(?:capabilit\w*|experience|expertise|track record)\b|\bideal candidate\b|\bwell[- ]equipped\b|\b(?:has|have|holds?|possess(?:es)?) (?:a |the )?(?:valid )?[^.]{0,30}\b(?:EPF|ESI|ESIC|PF)\b|within the (?:specified |estimated )?(?:budget|estimated cost)|\bbid meets all (?:the )?requirements\b|good strength base|well manufactured macadam|chartered accountant[^.]{0,40}\b(?:concrete|test|cube|quality)|(?:concrete|test|cube|quality)[^.]{0,60}chartered accountant/i;
+  /\b(?:our|the) (?:company|firm)\b[^.]{0,40}\b(?:has|have|had) (?:successfully )?(?:completed|executed)|\bturnover\b[^.]{0,80}\bwas (?:Rs|INR|₹)|\b(?:our|its) [^.]{0,30}\bturnover\b[^.]{0,60}\b(?:is|of) (?:Rs|INR|₹)|has not (?:incurred|suffered) (?:any )?loss|(?:have|has|possess) (?:the )?(?:necessary|requisite|adequate) (?:technical |financial )?(?:capabilit|capacit|experience)|we (?:meet|fulfil|fulfill|satisfy) (?:all )?(?:the )?eligibility|\bour (?:technical )?(?:capabilit\w*|experience|expertise|track record)\b|\bideal candidate\b|\bwell[- ]equipped\b|\b(?:has|have|holds?|possess(?:es)?) (?:a |the )?(?:valid )?[^.]{0,30}\b(?:EPF|ESI|ESIC|PF)\b|within the [^.]{0,30}\b(?:budget|estimated cost)\b|\bbid meets all (?:the )?requirements\b|good strength base|well manufactured macadam|chartered accountant[^.]{0,40}\b(?:concrete|test|cube|quality)|(?:concrete|test|cube|quality)[^.]{0,60}chartered accountant/i;
 
 const PAN_SHAPE = /\b[A-Z]{5}\s?\d{4}\s?[A-Z]\b|\b[A-Z]{4}\s[A-Z]\d{4}[A-Z]\b/g;
 const GSTIN_SHAPE = /\b\d{2}\s?[A-Z]{5}\s?\d{4}[A-Z]\d[A-Z][A-Z\d]\b/g;
@@ -264,6 +296,7 @@ export function parseProgramme(draft: string): Map<number, string> {
     const m = line.match(/Months?\s*(\d{1,2})(?:\s*(?:-|–|to)\s*(?:Months?\s*)?(\d{1,2}))?\s*[:|\-–]\s*(.+)/i);
     if (!m) continue;
     const activities = m[3]
+      .replace(/\s*\((?:approx\w*|about)[^)]*\)/gi, '')
       .replace(/\s*\|\s*/g, '; ')
       .replace(/[,;]?\s*(?:and )?defect liability period[^,;.]*/gi, '')
       .trim()
@@ -284,7 +317,7 @@ export function renderProgramme(draft: string, months: number | undefined, hasRo
   if (hasRoad && ![...byMonth.values()].some(a => ROAD_WORK.test(a))) {
     for (let month = Math.max(1, last - 2); month <= last; month++) {
       const current = byMonth.get(month);
-      byMonth.set(month, `${current ? `${current}; ` : ''}approach road and drainage works (outside monsoon)`);
+      byMonth.set(month, `${current ? `${current.replace(/\.$/, '')}; ` : ''}approach road and drainage works (outside monsoon)`);
     }
   }
   const lines = Array.from({ length: last }, (_, i) => `Month ${i + 1}: ${byMonth.get(i + 1) ?? '[activities to be planned]'}`);
@@ -381,6 +414,8 @@ export async function generateFoundationBid(
     delayCompensation: report.summary.metadata.delayCompensation,
     invitingOffice: report.summary.metadata.invitingOffice,
     hasRoad: /\broad\b/i.test(`${report.summary.technicalScope} ${report.summary.executiveSummary}`),
+    keyTerms: report.summary.metadata.keyTerms,
+    sourceText: report.summary.sourceText,
     isCodes: isCodesIn(
       [report.summary.sourceText, report.summary.technicalScope, report.summary.eligibilityAndClauses].join('\n')
     ),
@@ -418,6 +453,7 @@ export async function generateFoundationBid(
         inferenceOptions: { temperature, max_tokens: maxTokens ?? 900 },
       });
       content = tidyDraft(response.content);
+      if (section.clean) content = section.clean(content);
       problem = findDraftProblem(section, content, facts);
       if (!problem) break;
       console.warn(`[bid] ${id} draft rejected at temperature ${temperature}: ${problem}\n${content}`);

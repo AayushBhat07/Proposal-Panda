@@ -91,15 +91,27 @@ test('accepts tax IDs quoted exactly', () => {
   assert.equal(findDraftProblem(section, 'GSTIN 27ABCDE1234F1Z5, PAN ABCDE1234F.', facts), undefined);
 });
 
-test('rejects queries that say the tender lacks something', () => {
-  const q = [
+test('drops queries that misquote the tender, then needs five left', () => {
+  const draft = [
     '1. Considering the absence of a clear dispute resolution mechanism, please clarify.',
-    '2. Q2.',
-    '3. Q3.',
-    '4. Q4.',
-    '5. Q5.',
+    '2. Is delay compensation not covered by Clause 10CC?',
+    '3. Will the price variation exclusion under Clause 10CC be reviewed for steel?',
+    '4. How is the security deposit recovered from running bills?',
+    '5. Who bears GRIHA certification costs?',
+    '6. Is RMC plant approval by the department required?',
+    '7. Will site access be available through the monsoon?',
   ].join('\n');
-  assert.match(findDraftProblem(MODEL_SECTIONS.queries, q, facts) ?? '', /lacks/);
+  const cleaned = MODEL_SECTIONS.queries.clean!(draft);
+  assert.equal(
+    cleaned,
+    [
+      '1. Will the price variation exclusion under Clause 10CC be reviewed for steel?',
+      '2. Who bears GRIHA certification costs?',
+      '3. Is RMC plant approval by the department required?',
+      '4. Will site access be available through the monsoon?',
+    ].join('\n')
+  );
+  assert.match(findDraftProblem(MODEL_SECTIONS.queries, cleaned, facts) ?? '', /only 4/);
 });
 
 test('rejects a programme that lays masonry before the frame', () => {
@@ -176,4 +188,15 @@ test('replaces IS codes the tender never mentions', () => {
 test('rejects price commitments and wrong road terms', () => {
   assert.ok(findDraftProblem(section, 'We will execute the work within the specified budget.', facts));
   assert.ok(findDraftProblem(section, 'GSB (Good Strength Base) shall be laid.', facts));
+});
+
+test('compliance drops its own lines on quoted terms and quotes the NIT', () => {
+  const draft = '1. EMD of Rs. 27,24,900 enclosed.\n2. The bidder shall recover the security deposit.\n3. GRIHA measures will be followed.';
+  const cleaned = MODEL_SECTIONS.compliance.clean!(draft);
+  assert.equal(cleaned, '1. EMD of Rs. 27,24,900 enclosed.\n2. GRIHA measures will be followed.');
+  const out = MODEL_SECTIONS.compliance.finish!(cleaned, {
+    ...facts,
+    keyTerms: [{ label: 'Price variation (Clause 10CC)', text: 'Clause 10CC shall not be applicable.' }],
+  });
+  assert.match(out, /quoted from the NIT[^\n]*\n- Price variation \(Clause 10CC\): "Clause 10CC shall not be applicable\."$/);
 });

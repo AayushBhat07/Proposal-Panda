@@ -53,6 +53,43 @@ export function findDelayCompensation(text: string): string | undefined {
   return match ? `${match[1].replace(/\s/g, '')} per month, maximum ${match[2].replace(/\s/g, '')}` : undefined;
 }
 
+// A full stop ends a sentence unless it follows an abbreviation like "Rs." or "No.".
+const SENTENCE_END = /(?<!\b(?:Rs|No|Nos|Cl|viz|i\.e|e\.g|Pt|Sr|approx))\.\s+(?=[A-Z(])/;
+
+function sentencesOf(text: string): string[] {
+  return text
+    .split('\n')
+    .flatMap(line => line.split(SENTENCE_END))
+    .map(s => s.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+const KEY_TERMS: Array<{ label: string; term: RegExp; prefer: RegExp; also?: RegExp }> = [
+  { label: 'Compensation for delay (Clause 2)', term: /compensation for delay/i, prefer: /%/ },
+  { label: 'Price variation (Clause 10CC)', term: /10\s*CC/i, prefer: /appl/i },
+  { label: 'Mobilisation advance', term: /mobili[sz]ation advance/i, prefer: /%/ },
+  { label: 'Security deposit', term: /security deposit/i, prefer: /%|recover|deduct/i, also: /refund|releas|return/i },
+  { label: 'Performance guarantee', term: /performance (?:guarantee|security)/i, prefer: /%/ },
+];
+
+/**
+ * Key contract terms quoted word for word from the tender, so the bid never depends on a model's paraphrase:
+ * the first sentence that names the term and carries a figure or "applicable", plus the next sentence when it
+ * says how the amount is refunded.
+ */
+export function findKeyTerms(text: string): Array<{ label: string; text: string }> {
+  const sentences = sentencesOf(text);
+  return KEY_TERMS.flatMap(({ label, term, prefer, also }) => {
+    const index = sentences.findIndex(s => term.test(s) && prefer.test(s));
+    if (index === -1) return [];
+    let quote = sentences[index].replace(/\.?$/, '.');
+    if (also && !also.test(quote) && also.test(sentences[index + 1] ?? '')) {
+      quote += ` ${sentences[index + 1].replace(/\.?$/, '.')}`;
+    }
+    return [{ label, text: quote.slice(0, 400) }];
+  });
+}
+
 /** Finds the tender inviting office, e.g. "Office of the Executive Engineer, Pune Central Division-II, ...". */
 export function findInvitingOffice(text: string): string | undefined {
   return text.match(/Office of the (Executive Engineer[^\n]{0,150})/i)?.[1].trim().replace(/[.,]$/, '');
@@ -173,6 +210,7 @@ export class TenderSummarizationService {
           estimatedCost: findEstimatedCost(input.fullText),
           delayCompensation: findDelayCompensation(input.fullText),
           invitingOffice: findInvitingOffice(input.fullText),
+          keyTerms: findKeyTerms(input.fullText),
           modelUsed: !this.useLocalModel
             ? 'extractive-fallback'
             : this.fallbackSections > 0
