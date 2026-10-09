@@ -93,6 +93,8 @@ export interface TenderSummary {
     invitingOffice?: string;
     /** Delay, price variation, advance, security deposit and guarantee terms quoted from the tender text */
     keyTerms?: Array<{ label: string; text: string }>;
+    /** Risk-bearing clauses (guarantees, forfeiture, finality, disputes, extensions...) quoted from the tender text */
+    riskClauses?: Array<{ label: string; text: string }>;
     /**
      * Ollama model tag; "<model> (+N extractive)" when N sections fell back;
      * 'extractive-fallback' when no local model was reachable

@@ -15,8 +15,16 @@ import { useAuthStore } from '@/state/authStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
 import type { BidCover, FoundationBid } from '@/features/bid-generation';
-import { countBlanks, splitBlanks, unwrapLines } from '@/features/bid-generation/services/draftText';
+import {
+  countBlanks,
+  fillBlank,
+  isRememberable,
+  sharedBlanks,
+  splitBlanks,
+  unwrapLines,
+} from '@/features/bid-generation/services/draftText';
 import { coverToBlob } from '@/features/bid-generation/services/bidDocx';
+import FillBlanksPanel, { type BlankFill } from '@/components/bid/FillBlanksPanel';
 
 const COVERS: Array<{ cover: BidCover; label: string; title: string; file: string; note?: string }> = [
   { cover: 'technical', label: 'COVER I', title: 'Technical bid', file: 'cover-1-technical' },
@@ -30,6 +38,8 @@ const COVERS: Array<{ cover: BidCover; label: string; title: string; file: strin
 ];
 
 type StoredBid = FoundationBid & { id: string };
+/** Answers to blanks, kept across bids. One record per browser, like the company profile. */
+type BlankAnswers = { id: 'company'; answers: Record<string, string> };
 
 export default function FoundationBidPage() {
   const { id } = useParams<{ id: string }>();
@@ -42,11 +52,13 @@ export default function FoundationBidPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [savedAnswers, setSavedAnswers] = useState<Record<string, string>>({});
   const blankCursor = useRef(-1);
 
   useEffect(() => {
     setReport(getFromLocalStorage<Record<string, unknown>>('intelligenceReports', id));
     setBid(getFromLocalStorage<StoredBid>('foundationBids', id));
+    setSavedAnswers(getFromLocalStorage<BlankAnswers>('blankAnswers', 'company')?.answers ?? {});
     setIsLoaded(true);
   }, [id]);
 
@@ -97,6 +109,26 @@ export default function FoundationBidPage() {
     saveToLocalStorage('foundationBids', updated);
     setBid(updated);
     setEditing(null);
+  };
+
+  const handleFill = (fills: BlankFill[]) => {
+    if (!bid) return;
+    const editedAt = new Date().toISOString();
+    const updated: StoredBid = {
+      ...bid,
+      sections: bid.sections.map(section => {
+        const content = fills.reduce((text, { blank, value }) => fillBlank(text, blank, value), section.content);
+        return content === section.content ? section : { ...section, content, editedAt };
+      }),
+    };
+    saveToLocalStorage('foundationBids', updated);
+    setBid(updated);
+    const remembered = fills.filter(({ blank }) => isRememberable(blank));
+    if (remembered.length) {
+      const answers = { ...savedAnswers, ...Object.fromEntries(remembered.map(f => [f.blank, f.value])) };
+      saveToLocalStorage<BlankAnswers>('blankAnswers', { id: 'company', answers });
+      setSavedAnswers(answers);
+    }
   };
 
   // Cycles through the highlighted blanks in reading order.
@@ -184,6 +216,14 @@ export default function FoundationBidPage() {
             </Button>
           )}
         </div>
+      )}
+
+      {bid && can('bid.generate') && (
+        <FillBlanksPanel
+          blanks={sharedBlanks(bid.sections.map(s => s.content))}
+          saved={savedAnswers}
+          onFill={handleFill}
+        />
       )}
 
       {error && (

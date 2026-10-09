@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Packer } from 'docx';
 import mammoth from 'mammoth';
-import { countBlanks, splitBlanks, unwrapLines } from '../features/bid-generation/services/draftText';
+import { countBlanks, fillBlank, isRememberable, sharedBlanks, splitBlanks, unwrapLines } from '../features/bid-generation/services/draftText';
 import { buildCoverDocument } from '../features/bid-generation/services/bidDocx';
 import type { FoundationBid } from '../features/bid-generation/types/bid.types';
 
@@ -43,4 +43,20 @@ test('a cover file holds only that cover', async () => {
   assert.match(text, /Dear Sir/);
   assert.doesNotMatch(text, /\*\*/);
   assert.doesNotMatch(text, /Price Bid/);
+});
+
+test('shared blanks skip table columns and edit notes', () => {
+  const contents = [
+    'Signed [name of authorised signatory], [designation], on [dd/mm/yyyy] for [₹ ___].',
+    '| [client] | [value] |\n| [client] | [value] |',
+    'Witness: [name of authorised signatory] [dd/mm/yyyy] [___] [Edit needed: write this section]',
+  ];
+  assert.deepEqual(sharedBlanks(contents), [
+    { blank: '[name of authorised signatory]', count: 2 },
+    { blank: '[designation]', count: 1 },
+    { blank: '[dd/mm/yyyy]', count: 2 },
+  ]);
+  assert.equal(fillBlank(contents[0] + contents[2], '[dd/mm/yyyy]', '16/10/2026').match(/16\/10\/2026/g)?.length, 2);
+  assert.equal(isRememberable('[dd/mm/yyyy]'), false);
+  assert.equal(isRememberable('[designation]'), true);
 });
