@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   findCompletionMonths,
+  findDelayCompensation,
+  findInvitingOffice,
   findEmdAmount,
   findEstimatedCost,
   findNitReference,
@@ -46,4 +48,15 @@ test('does not repeat the document head in the source excerpt', () => {
   const excerpt = selectSourceText(fullText, chunks);
   assert.equal(excerpt.split('Name of Work').length - 1, 1);
   assert.match(excerpt, /\.\.\.\nConcrete grade M25/);
+});
+
+test('finds delay compensation and the inviting office', () => {
+  assert.equal(
+    findDelayCompensation('compensation @ 1.5 % per month of delay, subject to a maximum of 10% of the tendered value'),
+    '1.5% per month, maximum 10%'
+  );
+  assert.equal(
+    findInvitingOffice('Office of the Executive Engineer, Pune Central Division-II, Nirman Bhawan, Pune - 411001\nNIT'),
+    'Executive Engineer, Pune Central Division-II, Nirman Bhawan, Pune - 411001'
+  );
 });

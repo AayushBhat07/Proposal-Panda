@@ -45,6 +45,19 @@ function findRupees(text: string, label: RegExp): string | undefined {
 export const findEmdAmount = (text: string) => findRupees(text, /(?:earnest money(?: deposit)?|\bEMD\b)/);
 export const findEstimatedCost = (text: string) => findRupees(text, /estimated cost(?: put to tender)?/);
 
+/** Finds the delay compensation rate and cap, e.g. "1.5% per month, maximum 10%". */
+export function findDelayCompensation(text: string): string | undefined {
+  const match = text.match(
+    /(\d+(?:\.\d+)?\s*%)\s*(?:per month|per mensem|p\.\s?m\.)[^.]{0,120}?(?:maximum|ceiling|limited to|max\.?)\s*(?:of\s*)?(\d+(?:\.\d+)?\s*%)/i
+  );
+  return match ? `${match[1].replace(/\s/g, '')} per month, maximum ${match[2].replace(/\s/g, '')}` : undefined;
+}
+
+/** Finds the tender inviting office, e.g. "Office of the Executive Engineer, Pune Central Division-II, ...". */
+export function findInvitingOffice(text: string): string | undefined {
+  return text.match(/Office of the (Executive Engineer[^\n]{0,150})/i)?.[1].trim().replace(/[.,]$/, '');
+}
+
 const SOURCE_HEAD_CHARS = 4000;
 const SPEC_KEYWORDS = ['specification', 'grade', 'm20', 'm25', 'm30', 'fe500', 'fe 500', 'is:', 'is ', 'morth',
   'cpwd spec', 'rmc', 'griha', 'quality', 'testing', 'technical staff', 'plant', 'machinery'];
@@ -158,6 +171,8 @@ export class TenderSummarizationService {
           completionMonths: findCompletionMonths(input.fullText),
           emdAmount: findEmdAmount(input.fullText),
           estimatedCost: findEstimatedCost(input.fullText),
+          delayCompensation: findDelayCompensation(input.fullText),
+          invitingOffice: findInvitingOffice(input.fullText),
           modelUsed: !this.useLocalModel
             ? 'extractive-fallback'
             : this.fallbackSections > 0
