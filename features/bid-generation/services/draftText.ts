@@ -38,3 +38,32 @@ export function unwrapLines(text: string): string {
   }
   return out.join('\n');
 }
+
+/**
+ * Blanks worth filling in one go: the same placeholder in more than one section, such as
+ * [name of authorised signatory] or [dd/mm/yyyy]. Placeholders repeated within a single section are table
+ * columns ([client] per similar work, [attach] per document) and stay out, as do [Edit needed: ...] notes,
+ * which ask for a section to be written rather than a value, and unnamed blanks like [___] or [₹ ___], which
+ * mean something different in each place.
+ */
+export function sharedBlanks(contents: string[]): Array<{ blank: string; count: number }> {
+  const sections = new Map<string, Set<number>>();
+  const counts = new Map<string, number>();
+  contents.forEach((text, i) => {
+    for (const [blank] of text.matchAll(BLANK)) {
+      if (/^\[Edit needed/i.test(blank) || !/[a-z]{2}/i.test(blank)) continue;
+      counts.set(blank, (counts.get(blank) ?? 0) + 1);
+      sections.set(blank, (sections.get(blank) ?? new Set()).add(i));
+    }
+  });
+  return [...counts]
+    .filter(([blank, count]) => sections.get(blank)!.size > 1 || count === 1)
+    .map(([blank, count]) => ({ blank, count }));
+}
+
+export function fillBlank(text: string, blank: string, value: string): string {
+  return text.split(blank).join(value);
+}
+
+/** Dates change with every bid, so their answers aren't kept for the next one. */
+export const isRememberable = (blank: string) => !/date|dd\/mm|yyyy/i.test(blank);

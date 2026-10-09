@@ -8,6 +8,7 @@ import {
   findEmdAmount,
   findEstimatedCost,
   findNitReference,
+  findRiskClauses,
   selectSourceText,
 } from '../features/summarization/services/summarizer';
 
@@ -80,4 +81,14 @@ test('quotes key contract terms from the tender text', () => {
   );
   assert.match(terms['Mobilisation advance'], /10% simple interest/);
   assert.match(terms['Performance guarantee'], /7 days/);
+});
+
+test('quotes risk clauses from the tender text and skips absent ones', () => {
+  const text = [
+    'Bids shall be submitted online through the CPWD e-tendering portal.',
+    'The performance guarantee shall be an unconditional bank guarantee. The EMD shall be forfeited if the bidder withdraws.',
+    'Disputes shall be referred to arbitration under Clause 25.',
+  ].join('\n');
+  const labels = findRiskClauses(text).map(c => c.label);
+  assert.deepEqual(labels, ['Unconditional guarantee', 'Forfeiture', 'Dispute resolution', 'Online submission']);
 });

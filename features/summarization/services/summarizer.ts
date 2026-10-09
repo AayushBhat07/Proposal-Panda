@@ -64,7 +64,7 @@ function sentencesOf(text: string): string[] {
     .filter(Boolean);
 }
 
-const KEY_TERMS: Array<{ label: string; term: RegExp; prefer: RegExp; also?: RegExp }> = [
+const KEY_TERMS: QuotedTerm[] = [
   { label: 'Compensation for delay (Clause 2)', term: /compensation for delay/i, prefer: /%/ },
   { label: 'Price variation (Clause 10CC)', term: /10\s*CC/i, prefer: /appl/i },
   { label: 'Mobilisation advance', term: /mobili[sz]ation advance/i, prefer: /%/ },
@@ -72,14 +72,11 @@ const KEY_TERMS: Array<{ label: string; term: RegExp; prefer: RegExp; also?: Reg
   { label: 'Performance guarantee', term: /performance (?:guarantee|security)/i, prefer: /%/ },
 ];
 
-/**
- * Key contract terms quoted word for word from the tender, so the bid never depends on a model's paraphrase:
- * the first sentence that names the term and carries a figure or "applicable", plus the next sentence when it
- * says how the amount is refunded.
- */
-export function findKeyTerms(text: string): Array<{ label: string; text: string }> {
+type QuotedTerm = { label: string; term: RegExp; prefer: RegExp; also?: RegExp };
+
+function quoteTerms(text: string, terms: QuotedTerm[]): Array<{ label: string; text: string }> {
   const sentences = sentencesOf(text);
-  return KEY_TERMS.flatMap(({ label, term, prefer, also }) => {
+  return terms.flatMap(({ label, term, prefer, also }) => {
     const index = sentences.findIndex(s => term.test(s) && prefer.test(s));
     if (index === -1) return [];
     let quote = sentences[index].replace(/\.?$/, '.');
@@ -89,6 +86,31 @@ export function findKeyTerms(text: string): Array<{ label: string; text: string 
     return [{ label, text: quote.slice(0, 400) }];
   });
 }
+
+/**
+ * Key contract terms quoted word for word from the tender, so the bid never depends on a model's paraphrase:
+ * the first sentence that names the term and carries a figure or "applicable", plus the next sentence when it
+ * says how the amount is refunded.
+ */
+export const findKeyTerms = (text: string) => quoteTerms(text, KEY_TERMS);
+
+const ANY = /./;
+
+/** Clauses the compliance rules look for in the tender itself rather than in the model's summary. */
+const RISK_CLAUSES: QuotedTerm[] = [
+  { label: 'Unconditional guarantee', term: /unconditional/i, prefer: /guarantee|\bBG\b|bond/i },
+  { label: 'Forfeiture', term: /forfeit/i, prefer: ANY },
+  { label: 'Final and binding', term: /final,? (?:and )?(?:binding|conclusive)/i, prefer: ANY },
+  { label: 'Indemnity', term: /indemnif|indemnity/i, prefer: ANY },
+  { label: 'Dispute resolution', term: /arbitrat|dispute|jurisdiction/i, prefer: ANY },
+  { label: 'Extension of time', term: /extension of time|time extension|extension (?:in|of) (?:the )?(?:completion|contract) period/i, prefer: ANY },
+  { label: 'Force majeure', term: /force majeure/i, prefer: ANY },
+  { label: 'Short notice', term: /within (?:24|48|72) hours|within (?:one|two|three|[123]) days?\b/i, prefer: ANY },
+  { label: 'Online submission', term: /e-?tender|online|portal|digital signature/i, prefer: /submi|bid|tender/i },
+];
+
+/** Risk-bearing clauses quoted from the tender text, one sentence each, absent when the tender has no such clause. */
+export const findRiskClauses = (text: string) => quoteTerms(text, RISK_CLAUSES);
 
 /** Finds the tender inviting office, e.g. "Office of the Executive Engineer, Pune Central Division-II, ...". */
 export function findInvitingOffice(text: string): string | undefined {
@@ -211,6 +233,7 @@ export class TenderSummarizationService {
           delayCompensation: findDelayCompensation(input.fullText),
           invitingOffice: findInvitingOffice(input.fullText),
           keyTerms: findKeyTerms(input.fullText),
+          riskClauses: findRiskClauses(input.fullText),
           modelUsed: !this.useLocalModel
             ? 'extractive-fallback'
             : this.fallbackSections > 0

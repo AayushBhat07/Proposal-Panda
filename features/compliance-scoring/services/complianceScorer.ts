@@ -75,29 +75,47 @@ export async function analyzeCompliance(
   }
 }
 
+type RuleResult = { risks: IdentifiedRisk[]; scorePenalty: number; level: RiskLevel };
+type Summary = ComplianceScoringInput['summary'];
+
+function levelFor(penalty: number, medium: number, high: number): RiskLevel {
+  return penalty >= high ? 'High' : penalty >= medium ? 'Medium' : 'Low';
+}
+
+/** Clauses quoted from the tender text, by label. Empty for reports analysed before quoting existed. */
+function clausesOf(summary: Summary): Record<string, string> {
+  return Object.fromEntries((summary.metadata.riskClauses ?? []).map((c) => [c.label, c.text]));
+}
+
+/** A risk that quotes the tender sentence it comes from. */
+function quotedRisk(category: IdentifiedRisk['category'], quote: string, consequence: string): IdentifiedRisk {
+  return { category, description: `The tender states: "${quote}" ${consequence}`, sourceSection: 'tender text' };
+}
+
 /**
- * Perform deterministic compliance analysis
- * 
- * Uses rule-based extraction and pattern matching to ensure
- * same input → same output
+ * Deterministic analysis. Every rule reads the tender's own sentences or figures (summary.metadata), never the
+ * model's prose, so a risk is only raised when the tender says it, and the same tender always scores the same.
  */
 async function performComplianceAnalysis(
   input: ComplianceScoringInput,
   verbose: boolean
 ): Promise<ComplianceScore> {
   const { summary } = input;
+  const clauses = clausesOf(summary);
 
-  // Initialize baseline score
-  let baselineScore = 80;
-
-  // Analyze each section for risk indicators
-  const financialRisks = analyzeFinancialRisks(summary, verbose);
-  const technicalRisks = analyzeTechnicalRisks(summary, verbose);
-  const legalRisks = analyzeLegalRisks(summary, verbose);
-  const submissionRisks = analyzeSubmissionRisks(summary, verbose);
+  const financialRisks = analyzeFinancialRisks(clauses);
+  const technicalRisks = analyzeTechnicalRisks(summary.metadata.completionMonths);
+  const legalRisks = analyzeLegalRisks(clauses);
+  const submissionRisks = analyzeSubmissionRisks(clauses);
   const contractRisks = analyzeContractTerms(summary);
+  const results = { financialRisks, technicalRisks, legalRisks, submissionRisks, contractRisks };
 
-  // Aggregate identified risks
+  if (verbose) {
+    for (const [name, r] of Object.entries(results)) {
+      console.log(`[Compliance] ${name}: ${r.risks.length} risks, penalty ${r.scorePenalty}, ${r.level}`);
+    }
+  }
+
   const identifiedRisks: IdentifiedRisk[] = [
     ...contractRisks.risks,
     ...financialRisks.risks,
@@ -106,22 +124,10 @@ async function performComplianceAnalysis(
     ...submissionRisks.risks,
   ];
 
-  // Calculate compliance score adjustments
-  baselineScore -= financialRisks.scorePenalty;
-  baselineScore -= technicalRisks.scorePenalty;
-  baselineScore -= legalRisks.scorePenalty;
-  baselineScore -= submissionRisks.scorePenalty;
-  baselineScore -= contractRisks.scorePenalty;
+  const conservativeBias = input.options?.conservativeBias === true;
+  const penalty = Object.values(results).reduce((sum, r) => sum + r.scorePenalty, 0) + (conservativeBias ? 5 : 0);
+  const complianceScore = Math.max(0, Math.min(100, 80 - penalty));
 
-  // Apply conservative bias for government tenders
-  if (input.options?.conservativeBias !== false) {
-    baselineScore -= 5; // Government tenders favor authority
-  }
-
-  // Clamp score to 0-100
-  const complianceScore = Math.max(0, Math.min(100, baselineScore));
-
-  // Determine risk categories
   const riskCategories = {
     financial: higherRisk(financialRisks.level, contractRisks.level),
     technical: technicalRisks.level,
@@ -129,319 +135,73 @@ async function performComplianceAnalysis(
     submission: submissionRisks.level,
   };
 
-  // Determine overall risk level
-  const riskLevel = calculateOverallRiskLevel(riskCategories);
-
-  // Identify missing or weak clauses
-  const missingOrWeakClauses = identifyMissingClauses(summary);
-
-  // Identify submission traps
-  const submissionTraps = identifySubmissionTraps(summary);
-
-  // Generate confidence notes
-  const confidenceNotes = generateConfidenceNotes(
-    complianceScore,
-    identifiedRisks.length,
-    input.options?.conservativeBias !== false
-  );
-
   return {
     complianceScore,
-    riskLevel,
+    riskLevel: calculateOverallRiskLevel(riskCategories),
     riskCategories,
     identifiedRisks,
-    missingOrWeakClauses,
-    submissionTraps,
-    confidenceNotes,
+    missingOrWeakClauses: identifyMissingClauses(summary),
+    submissionTraps: identifySubmissionTraps(clauses),
+    confidenceNotes: generateConfidenceNotes(complianceScore, identifiedRisks.length, conservativeBias),
   };
 }
 
-/**
- * Analyze financial risks from summary
- */
-function analyzeFinancialRisks(
-  summary: ComplianceScoringInput['summary'],
-  verbose: boolean
-): { risks: IdentifiedRisk[]; scorePenalty: number; level: RiskLevel } {
+/** Guarantees that can be encashed without consent, and deposits that can be forfeited. An EMD alone is not a risk. */
+function analyzeFinancialRisks(clauses: Record<string, string>): RuleResult {
   const risks: IdentifiedRisk[] = [];
   let scorePenalty = 0;
-
-  const commercialText = summary.commercialTerms.toLowerCase();
-  const legalText = summary.legalHighlights.toLowerCase();
-
-  // Check for high EMD
-  if (commercialText.includes('emd') || commercialText.includes('earnest money')) {
-    const emdMatch = commercialText.match(/rs\.?\s*([\d,]+)/i);
-    if (emdMatch) {
-      risks.push({
-        category: 'Financial',
-        description: `The tender specifies an Earnest Money Deposit (EMD) requirement. Contractors must arrange this financial guarantee before submission.`,
-        sourceSection: 'commercialTerms',
-      });
-      scorePenalty += 5;
-    }
-  }
-
-  // Check for unconditional guarantees
-  if (
-    legalText.includes('unconditional') &&
-    (legalText.includes('guarantee') || legalText.includes('bond'))
-  ) {
-    risks.push({
-      category: 'Financial',
-      description: `The document requires unconditional bank guarantees. The contractor is obligated to provide guarantees without conditions or qualifications.`,
-      sourceSection: 'legalHighlights',
-    });
+  if (clauses['Unconditional guarantee']) {
+    risks.push(quotedRisk('Financial', clauses['Unconditional guarantee'], 'The guarantee can be encashed without the contractor\'s consent.'));
     scorePenalty += 10;
   }
-
-  // Check for forfeiture clauses
-  if (
-    commercialText.includes('forfeiture') ||
-    legalText.includes('forfeiture') ||
-    commercialText.includes('penalty')
-  ) {
-    risks.push({
-      category: 'Financial',
-      description: `The tender contains forfeiture or penalty clauses. Financial guarantees may be forfeited under specified conditions.`,
-      sourceSection: 'legalHighlights',
-    });
+  if (clauses['Forfeiture']) {
+    risks.push(quotedRisk('Financial', clauses['Forfeiture'], 'The deposit or guarantee named here can be forfeited.'));
     scorePenalty += 5;
   }
-
-  // Check for performance security
-  if (commercialText.includes('performance security') || commercialText.includes('security deposit')) {
-    risks.push({
-      category: 'Financial',
-      description: `The tender requires performance security deposit. The contractor must provide additional financial security after contract award.`,
-      sourceSection: 'commercialTerms',
-    });
-    scorePenalty += 3;
-  }
-
-  // Determine financial risk level
-  let level: RiskLevel = 'Low';
-  if (scorePenalty >= 15) {
-    level = 'High';
-  } else if (scorePenalty >= 8) {
-    level = 'Medium';
-  }
-
-  if (verbose) {
-    console.log(`[FinancialRisk] Identified ${risks.length} risks, penalty: ${scorePenalty}, level: ${level}`);
-  }
-
-  return { risks, scorePenalty, level };
+  return { risks, scorePenalty, level: levelFor(scorePenalty, 8, 15) };
 }
 
-/**
- * Analyze technical risks from summary
- */
-function analyzeTechnicalRisks(
-  summary: ComplianceScoringInput['summary'],
-  verbose: boolean
-): { risks: IdentifiedRisk[]; scorePenalty: number; level: RiskLevel } {
-  const risks: IdentifiedRisk[] = [];
-  let scorePenalty = 0;
-
-  const technicalText = summary.technicalScope.toLowerCase();
-  const executiveText = summary.executiveSummary.toLowerCase();
-
-  // Check for long execution period
-  if (
-    technicalText.includes('23 months') ||
-    technicalText.includes('24 months') ||
-    executiveText.includes('23 months')
-  ) {
-    risks.push({
+/** A completion period of two years or more ties up plant, staff and guarantees for that long. */
+function analyzeTechnicalRisks(completionMonths: number | undefined): RuleResult {
+  if (completionMonths === undefined || completionMonths < 24) return { risks: [], scorePenalty: 0, level: 'Low' };
+  return {
+    risks: [{
       category: 'Technical',
-      description: `The tender specifies an execution period of 23 months. The contractor is required to maintain resources and performance standards over an extended duration.`,
-      sourceSection: 'technicalScope',
-    });
-    scorePenalty += 5;
-  }
-
-  // Check for extensive scope
-  if (
-    technicalText.includes('extensive') ||
-    technicalText.includes('complex') ||
-    technicalText.includes('multiple')
-  ) {
-    risks.push({
-      category: 'Technical',
-      description: `The document describes extensive technical scope. The contractor must have capability to execute multiple work categories.`,
-      sourceSection: 'technicalScope',
-    });
-    scorePenalty += 5;
-  }
-
-  // Check for specialized requirements
-  if (
-    technicalText.includes('specialized') ||
-    technicalText.includes('specific') ||
-    technicalText.includes('certified')
-  ) {
-    risks.push({
-      category: 'Technical',
-      description: `The tender requires specialized technical capabilities or certifications. The contractor must demonstrate specific qualifications.`,
-      sourceSection: 'technicalScope',
-    });
-    scorePenalty += 3;
-  }
-
-  // Determine technical risk level
-  let level: RiskLevel = 'Low';
-  if (scorePenalty >= 10) {
-    level = 'High';
-  } else if (scorePenalty >= 5) {
-    level = 'Medium';
-  }
-
-  if (verbose) {
-    console.log(`[TechnicalRisk] Identified ${risks.length} risks, penalty: ${scorePenalty}, level: ${level}`);
-  }
-
-  return { risks, scorePenalty, level };
+      description: `The tender specifies a completion period of ${completionMonths} months. Resources and guarantees stay committed for that period.`,
+      sourceSection: 'tender text',
+    }],
+    scorePenalty: 5,
+    level: 'Medium',
+  };
 }
 
-/**
- * Analyze legal risks from summary
- */
-function analyzeLegalRisks(
-  summary: ComplianceScoringInput['summary'],
-  verbose: boolean
-): { risks: IdentifiedRisk[]; scorePenalty: number; level: RiskLevel } {
+function analyzeLegalRisks(clauses: Record<string, string>): RuleResult {
   const risks: IdentifiedRisk[] = [];
   let scorePenalty = 0;
-
-  const legalText = summary.legalHighlights.toLowerCase();
-
-  // Check for finality clauses
-  if (
-    legalText.includes('finality') ||
-    legalText.includes('final and binding') ||
-    legalText.includes('irrevocable')
-  ) {
-    risks.push({
-      category: 'Legal',
-      description: `The document contains finality clauses. The contractor is bound by decisions stated as final and binding.`,
-      sourceSection: 'legalHighlights',
-    });
+  if (clauses['Final and binding']) {
+    risks.push(quotedRisk('Legal', clauses['Final and binding'], 'Decisions covered by this clause bind the contractor.'));
+    scorePenalty += 5;
+  }
+  if (clauses['Indemnity']) {
+    risks.push(quotedRisk('Legal', clauses['Indemnity'], 'The contractor carries the liabilities named here.'));
+    scorePenalty += 5;
+  }
+  const disputes = clauses['Dispute resolution'];
+  if (disputes && /arbitrat/i.test(disputes) && /\b(?:no|not|excluded)\b/i.test(disputes)) {
+    risks.push(quotedRisk('Legal', disputes, 'Arbitration may not be available for disputes.'));
     scorePenalty += 10;
   }
-
-  // Check for jurisdiction requirements
-  if (legalText.includes('jurisdiction') || legalText.includes('arbitration')) {
-    risks.push({
-      category: 'Legal',
-      description: `The tender specifies jurisdiction and arbitration requirements. Disputes must be resolved under stated legal framework.`,
-      sourceSection: 'legalHighlights',
-    });
-    scorePenalty += 3;
-  }
-
-  // Check for indemnity clauses
-  if (legalText.includes('indemnity') || legalText.includes('indemnify')) {
-    risks.push({
-      category: 'Legal',
-      description: `The document requires the contractor to indemnify the authority. The contractor is obligated to protect the authority from specified liabilities.`,
-      sourceSection: 'legalHighlights',
-    });
-    scorePenalty += 5;
-  }
-
-  // Check for guarantee obligations
-  if (legalText.includes('guarantee') || legalText.includes('bond')) {
-    risks.push({
-      category: 'Legal',
-      description: `The tender requires legal guarantees or bonds. The contractor must execute formal guarantee instruments.`,
-      sourceSection: 'legalHighlights',
-    });
-    scorePenalty += 3;
-  }
-
-  // Determine legal risk level
-  let level: RiskLevel = 'Low';
-  if (scorePenalty >= 15) {
-    level = 'High';
-  } else if (scorePenalty >= 8) {
-    level = 'Medium';
-  }
-
-  if (verbose) {
-    console.log(`[LegalRisk] Identified ${risks.length} risks, penalty: ${scorePenalty}, level: ${level}`);
-  }
-
-  return { risks, scorePenalty, level };
+  return { risks, scorePenalty, level: levelFor(scorePenalty, 8, 15) };
 }
 
-/**
- * Analyze submission risks from summary
- */
-function analyzeSubmissionRisks(
-  summary: ComplianceScoringInput['summary'],
-  verbose: boolean
-): { risks: IdentifiedRisk[]; scorePenalty: number; level: RiskLevel } {
-  const risks: IdentifiedRisk[] = [];
-  let scorePenalty = 0;
-
-  const datesText = summary.datesAndObligations.toLowerCase();
-  const attentionText = summary.attentionPoints.toLowerCase();
-
-  // Check for tight deadlines
-  if (
-    datesText.includes('3 days') ||
-    datesText.includes('72 hours') ||
-    datesText.includes('within 24')
-  ) {
-    risks.push({
-      category: 'Submission',
-      description: `The document specifies short submission timelines. The contractor must prepare and submit documents within limited timeframes.`,
-      sourceSection: 'datesAndObligations',
-    });
-    scorePenalty += 8;
-  }
-
-  // Check for online submission requirements
-  if (
-    datesText.includes('online') ||
-    datesText.includes('portal') ||
-    datesText.includes('digital signature')
-  ) {
-    risks.push({
-      category: 'Submission',
-      description: `The tender requires online submission through designated portal. The contractor must comply with digital submission procedures.`,
-      sourceSection: 'datesAndObligations',
-    });
-    scorePenalty += 2;
-  }
-
-  // Check for multiple document requirements
-  if (
-    attentionText.includes('extensive documentation') ||
-    attentionText.includes('numerous requirements')
-  ) {
-    risks.push({
-      category: 'Submission',
-      description: `The tender requires extensive documentation. The contractor must prepare and submit multiple supporting documents.`,
-      sourceSection: 'attentionPoints',
-    });
-    scorePenalty += 3;
-  }
-
-  // Determine submission risk level
-  let level: RiskLevel = 'Low';
-  if (scorePenalty >= 10) {
-    level = 'High';
-  } else if (scorePenalty >= 5) {
-    level = 'Medium';
-  }
-
-  if (verbose) {
-    console.log(`[SubmissionRisk] Identified ${risks.length} risks, penalty: ${scorePenalty}, level: ${level}`);
-  }
-
-  return { risks, scorePenalty, level };
+/** Online submission is normal; a deadline of a few days after an event is not. */
+function analyzeSubmissionRisks(clauses: Record<string, string>): RuleResult {
+  if (!clauses['Short notice']) return { risks: [], scorePenalty: 0, level: 'Low' };
+  return {
+    risks: [quotedRisk('Submission', clauses['Short notice'], 'The contractor has only this long to respond.')],
+    scorePenalty: 8,
+    level: 'Medium',
+  };
 }
 
 const RISK_ORDER: RiskLevel[] = ['Low', 'Medium', 'High'];
@@ -511,75 +271,28 @@ export function analyzeContractTerms(
   return { risks, scorePenalty, level };
 }
 
-/**
- * Identify missing or weak clauses
- */
-function identifyMissingClauses(
-  summary: ComplianceScoringInput['summary']
-): MissingClause[] {
-  const clauses: MissingClause[] = [];
+const EXPECTED_CLAUSES: Array<{ label: string; clause: string }> = [
+  { label: 'Dispute resolution', clause: 'Dispute Resolution Mechanism' },
+  { label: 'Extension of time', clause: 'Time Extension Provisions' },
+  { label: 'Force majeure', clause: 'Force Majeure Clause' },
+];
 
-  const legalText = summary.legalHighlights.toLowerCase();
-  const commercialText = summary.commercialTerms.toLowerCase();
-
-  // Check for dispute resolution
-  if (!legalText.includes('dispute') && !legalText.includes('arbitration')) {
-    clauses.push({
-      clause: 'Dispute Resolution Mechanism',
-      reason: 'The tender does not explicitly specify dispute resolution procedures.',
-    });
-  }
-
-  // Check for extension provisions
-  if (!commercialText.includes('extension') && !legalText.includes('extension')) {
-    clauses.push({
-      clause: 'Time Extension Provisions',
-      reason: 'The document does not clearly state procedures for time extension requests.',
-    });
-  }
-
-  // Check for force majeure
-  if (!legalText.includes('force majeure') && !legalText.includes('unforeseen')) {
-    clauses.push({
-      clause: 'Force Majeure Clause',
-      reason: 'Not found in the tender text summary. Check whether the General Conditions of Contract it refers to (e.g. CPWD GCC) cover it.',
-    });
-  }
-
-  return clauses;
+/** Clauses absent from the tender text itself. Skipped for reports analysed before the text was checked. */
+function identifyMissingClauses(summary: Summary): MissingClause[] {
+  if (!summary.metadata.riskClauses) return [];
+  const clauses = clausesOf(summary);
+  return EXPECTED_CLAUSES.filter(({ label }) => !clauses[label]).map(({ clause }) => ({
+    clause,
+    reason: 'Not found in the tender text. Check whether the General Conditions of Contract it refers to (e.g. CPWD GCC) cover it.',
+  }));
 }
 
-/**
- * Identify submission traps (procedural requirements)
- */
-function identifySubmissionTraps(
-  summary: ComplianceScoringInput['summary']
-): string[] {
+/** Procedural requirements quoted from the tender. */
+function identifySubmissionTraps(clauses: Record<string, string>): string[] {
   const traps: string[] = [];
-
-  const datesText = summary.datesAndObligations.toLowerCase();
-  const legalText = summary.legalHighlights.toLowerCase();
-
-  // Short notice requirements
-  if (datesText.includes('3 days') || datesText.includes('72 hours')) {
-    traps.push('Requires document submission within 3 days of specified events');
-  }
-
-  // Unconditional guarantees
-  if (legalText.includes('unconditional') && legalText.includes('guarantee')) {
-    traps.push('Requires unconditional bank guarantee without qualification');
-  }
-
-  // No extension clause
-  if (!datesText.includes('extension')) {
-    traps.push('No explicit provision for deadline extensions mentioned');
-  }
-
-  // Online portal requirement
-  if (datesText.includes('online') || datesText.includes('portal')) {
-    traps.push('Submission must be completed through designated online portal');
-  }
-
+  if (clauses['Short notice']) traps.push(`Short deadline: "${clauses['Short notice']}"`);
+  if (clauses['Unconditional guarantee']) traps.push(`Unconditional guarantee required: "${clauses['Unconditional guarantee']}"`);
+  if (clauses['Online submission']) traps.push(`Online submission: "${clauses['Online submission']}"`);
   return traps;
 }
 
@@ -681,7 +394,11 @@ function detectForbiddenLanguage(score: ComplianceScore): string[] {
     ...score.identifiedRisks.map((r) => r.description),
     ...score.missingOrWeakClauses.map((c) => c.reason),
     ...score.submissionTraps,
-  ].join(' ').toLowerCase();
+  ]
+    .join(' ')
+    // Quoted tender text is the tender's wording, not ours ("the bidder should submit...").
+    .replace(/"[^"]*"/g, '')
+    .toLowerCase();
 
   for (const word of forbiddenWords) {
     if (allText.includes(word)) {
