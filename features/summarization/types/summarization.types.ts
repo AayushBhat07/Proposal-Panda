@@ -91,6 +91,8 @@ export interface TenderSummary {
     delayCompensation?: string;
     /** Tender inviting office, e.g. "Executive Engineer, Pune Central Division-II, ...", if found */
     invitingOffice?: string;
+    /** Delay, price variation, advance, security deposit and guarantee terms quoted from the tender text */
+    keyTerms?: Array<{ label: string; text: string }>;
     /**
      * Ollama model tag; "<model> (+N extractive)" when N sections fell back;
      * 'extractive-fallback' when no local model was reachable

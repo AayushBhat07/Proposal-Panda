@@ -4,6 +4,7 @@ import {
   findCompletionMonths,
   findDelayCompensation,
   findInvitingOffice,
+  findKeyTerms,
   findEmdAmount,
   findEstimatedCost,
   findNitReference,
@@ -59,4 +60,24 @@ test('finds delay compensation and the inviting office', () => {
     findInvitingOffice('Office of the Executive Engineer, Pune Central Division-II, Nirman Bhawan, Pune - 411001\nNIT'),
     'Executive Engineer, Pune Central Division-II, Nirman Bhawan, Pune - 411001'
   );
+});
+
+test('quotes key contract terms from the tender text', () => {
+  const nit = [
+    'The Security Deposit shall be collected as per Clause 1A.',
+    'Security Deposit @ 2.5% of the tendered value shall be recovered from running bills. It shall be refunded after the defect liability period of 12 months.',
+    'Compensation for delay under Clause 2 shall be levied @ 1.5% per month of delay, subject to a maximum of 10% of the tendered value.',
+    'Clause 10CC (price variation) shall not be applicable to this work.',
+    'Mobilisation advance up to 10% of the tendered value at 10% simple interest against a BG of 110%.',
+    'Performance Guarantee of 5% of tendered value within 15 days, extendable by 7 days with late fee of 0.1% per day.',
+  ].join('\n');
+  const terms = Object.fromEntries(findKeyTerms(nit).map(t => [t.label, t.text]));
+  assert.equal(terms['Price variation (Clause 10CC)'], 'Clause 10CC (price variation) shall not be applicable to this work.');
+  assert.match(terms['Compensation for delay (Clause 2)'], /^Compensation for delay under Clause 2 .*1\.5% per month.*10%/);
+  assert.equal(
+    terms['Security deposit'],
+    'Security Deposit @ 2.5% of the tendered value shall be recovered from running bills. It shall be refunded after the defect liability period of 12 months.'
+  );
+  assert.match(terms['Mobilisation advance'], /10% simple interest/);
+  assert.match(terms['Performance guarantee'], /7 days/);
 });
