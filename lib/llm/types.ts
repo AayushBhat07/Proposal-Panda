@@ -63,22 +63,3 @@ export interface LlmHealthCheck {
   version?: string;
   errorMessage?: string;
 }
-
-/**
- * Section types for prompt templates
- */
-export type TenderSectionType =
-  | 'TENDER_NOTICE'
-  | 'DETAILED_TENDER_NOTICE'
-  | 'ADDITIONAL_GCC'
-  | 'GENERAL_NOTES'
-  | 'ADDITIONAL_SPECIFICATIONS';
-
-/**
- * Section prompt template (placeholder for future use)
- */
-export interface SectionPromptTemplate {
-  sectionType: TenderSectionType;
-  systemContext: string;
-  instructionTemplate: string;
-}

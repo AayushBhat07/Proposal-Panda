@@ -109,18 +109,6 @@ export interface ComplianceScore {
  */
 export interface ComplianceAnalysisOptions {
   /**
-   * Model to use for analysis
-   * Default: Qwen2.5-3B-Instruct
-   */
-  model?: 'qwen2.5:3b-instruct' | 'phi3:mini';
-
-  /**
-   * Temperature for inference (low = deterministic)
-   * Default: 0.1
-   */
-  temperature?: number;
-
-  /**
    * Conservative scoring bias (government tenders favor authority)
    * Default: true
    */

@@ -18,11 +18,6 @@ import type {
   MissingClause,
   RiskLevel,
 } from '../types/compliance.types';
-import {
-  callInstructionModel,
-  validateInstructionModel,
-  getRecommendedModel,
-} from './instructionModelService';
 
 /**
  * Analyze tender summary for compliance and risk
@@ -41,28 +36,13 @@ export async function analyzeCompliance(
     // Validate input
     validateInput(input);
 
-    // Get model configuration
-    const model = input.options?.model || getRecommendedModel();
-    const temperature = input.options?.temperature || 0.1;
+    // Deterministic rules over the Qwen-generated summary; no model call here.
     const verbose = input.options?.verbose || false;
-
-    if (verbose) {
-      console.log('[ComplianceScorer] Starting analysis...');
-      console.log(`[ComplianceScorer] Model: ${model}`);
-      console.log(`[ComplianceScorer] Temperature: ${temperature}`);
-    }
-
-    // Validate model availability
-    const isModelAvailable = await validateInstructionModel(model);
-    if (!isModelAvailable) {
-      warnings.push(`Model ${model} not available, using fallback analysis`);
-    }
+    if (verbose) console.log('[ComplianceScorer] Starting rule-based analysis...');
 
     // Perform deterministic compliance analysis
     const complianceScore = await performComplianceAnalysis(
       input,
-      model,
-      temperature,
       verbose
     );
 
@@ -82,7 +62,7 @@ export async function analyzeCompliance(
       score: complianceScore,
       diagnostics: {
         processingTimeMs,
-        modelUsed: model,
+        modelUsed: 'rules',
         tenderId: input.summary.metadata.tenderId,
         summaryVersion: 'Phase 4A',
         warnings,
@@ -103,8 +83,6 @@ export async function analyzeCompliance(
  */
 async function performComplianceAnalysis(
   input: ComplianceScoringInput,
-  model: string,
-  temperature: number,
   verbose: boolean
 ): Promise<ComplianceScore> {
   const { summary } = input;

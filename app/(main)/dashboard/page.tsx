@@ -22,7 +22,6 @@ interface StoredReport {
   id: string;
   fileName: string;
   uploadedAt: string;
-  type?: string;
   summary?: { metadata?: { tenderTitle?: string } };
   compliance?: { riskLevel?: string };
 }
@@ -222,7 +221,7 @@ function DashboardContent() {
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
                     <th className="pb-3 font-medium">TENDER ID / NAME</th>
-                    <th className="pb-3 font-medium">SOURCE</th>
+                    <th className="pb-3 font-medium">FILE</th>
                     <th className="pb-3 font-medium">DATE UPLOADED</th>
                     <th className="pb-3 font-medium">RISK</th>
                     <th className="pb-3 font-medium">ACTIONS</th>
@@ -234,7 +233,7 @@ function DashboardContent() {
                       key={report.id}
                       id={report.id}
                       name={report.summary?.metadata?.tenderTitle || report.fileName}
-                      division={report.type === 'generated' ? 'Generated' : 'Uploaded'}
+                      division={report.fileName}
                       date={new Date(report.uploadedAt).toLocaleDateString()}
                       status={`${report.compliance?.riskLevel ?? 'Unknown'} Risk`}
                       statusColor={report.compliance?.riskLevel === 'Low' ? 'green' : report.compliance?.riskLevel === 'Medium' ? 'orange' : 'gray'}

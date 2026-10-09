@@ -16,3 +16,9 @@
 - Generated tender route (`/api/tender/generate`) still returns template data; only its build error and auth were fixed.
 - `useTenderGenerationOrchestrator` (Llama chapter generator) remains unused.
 - Pre-existing lint errors untouched.
+
+## Round 2 (2026-10-09, after user answers)
+- Roles: Admin, BidWriter, TenderAnalyst, Viewer (Executive + Compliance Reviewer merged into Viewer: identical permissions).
+- Removed Generate Tender page/API, the Llama chapter tender generator (features/ai-generation), unused tender-management, test-tenders.
+- Models: Llama 3 (bids) + Qwen (analysis) only. BART naming and phi3/mock instruction model removed; compliance is rules (`modelUsed: 'rules'`). Ollama client moved to lib/llm/ollama.ts.
+- Foundation bid follows CPWD two-bid format: Cover I (transmittal, checklist, declarations/affidavit, similar works + bid capacity 2·A·N−B, scope, methodology/work programme, compliance, pre-bid queries) and Cover II (percentage/item-rate proforma). Narrative = Llama, proformas = bidTemplates.ts. Reference: IIT Kanpur IWD CPWD-pattern NIT (Forms 5.1–5.13).
