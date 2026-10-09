@@ -21,9 +21,34 @@ const SOURCE_TEXT_CHARS = 10000;
 /** Finds the NIT / tender reference, e.g. "NIT No. 14/EE/PCD-II/2026-27". */
 export function findNitReference(text: string): string | undefined {
   const match = text.match(
-    /\b(?:N\.?I\.?T\.?|(?:e-)?Tender|Bid)\s*(?:No|Number|Ref(?:erence)?)\.?\s*[:\-–]?\s*([A-Z0-9][A-Z0-9/\-.()]*\d[A-Z0-9/\-.()]*)/i
+    /\b(?:N\.?I\.?T\.?|(?:e-)?Tender|Bid)\)?\s*(?:No|Number|Ref(?:erence)?)\.?\s*[:\-–]?\s*([A-Z0-9][A-Z0-9/\-.()]*\d[A-Z0-9/\-.()]*)/i
   );
   return match?.[1].replace(/[.)]+$/, '');
+}
+
+/** Finds the completion period in months, e.g. "Period of completion: 18 (Eighteen) months". */
+export function findCompletionMonths(text: string): number | undefined {
+  const match = text.match(
+    /(?:period of completion|completion period|time allowed(?: for completion)?|time of completion|to be completed (?:with)?in)[^0-9]{0,40}?(\d{1,2})\s*(?:\([a-z ]+\)\s*)?months/i
+  );
+  return match ? Number(match[1]) : undefined;
+}
+
+const SOURCE_HEAD_CHARS = 4000;
+const SPEC_KEYWORDS = ['specification', 'grade', 'm20', 'm25', 'm30', 'fe500', 'fe 500', 'is:', 'is ', 'morth',
+  'cpwd spec', 'rmc', 'griha', 'quality', 'testing', 'technical staff', 'plant', 'machinery'];
+
+/** NIT head (key data) plus the chunks most about specs and resources, capped for Llama 3's 8k context. */
+function selectSourceText(fullText: string, chunks: TextChunk[]): string {
+  let text = fullText.slice(0, SOURCE_HEAD_CHARS);
+  for (const chunk of chunks) {
+    if (text.length >= SOURCE_TEXT_CHARS) break;
+    const lower = chunk.text.toLowerCase();
+    const position = fullText.indexOf(chunk.text.slice(0, 200));
+    if (position !== -1 && position < SOURCE_HEAD_CHARS) continue; // already in the head
+    if (SPEC_KEYWORDS.some(k => lower.includes(k))) text += `\n...\n${chunk.text}`;
+  }
+  return text.slice(0, SOURCE_TEXT_CHARS);
 }
 
 /**
@@ -110,12 +135,13 @@ export class TenderSummarizationService {
         legalHighlights,
         attentionPoints,
         eligibilityAndClauses,
-        sourceText: input.fullText.slice(0, SOURCE_TEXT_CHARS),
+        sourceText: selectSourceText(input.fullText, chunks),
         metadata: {
           tenderId: input.tenderId,
           tenderTitle: input.tenderTitle,
           generatedAt: new Date(),
           nitReference: findNitReference(input.fullText),
+          completionMonths: findCompletionMonths(input.fullText),
           modelUsed: !this.useLocalModel
             ? 'extractive-fallback'
             : this.fallbackSections > 0
@@ -338,14 +364,16 @@ export class TenderSummarizationService {
       'Extract as bullet points: eligibility criteria (similar works thresholds, average annual turnover, solvency, bid capacity formula); ' +
         'compensation for delay and its cap; price variation / escalation clause (e.g. 10CC) and whether it applies; ' +
         'mobilisation or secured advance; security deposit and performance guarantee; dispute resolution, arbitration and venue. ' +
-        'Quote amounts, percentages and clause numbers exactly as written.'
+        'Quote amounts, percentages and clause numbers exactly as written. For each clause, write "applies" or ' +
+        '"does not apply" exactly as the tender states. Do not list documents to upload. Keep it under 200 words.',
+      800
     );
   }
 
   /**
    * Summarize one section with the local model; fall back to extraction on any failure.
    */
-  private async summarize(text: string, instruction: string): Promise<string> {
+  private async summarize(text: string, instruction: string, maxTokens = 600): Promise<string> {
     if (this.useLocalModel) {
       const result = await generateWithLlmSafe({
         model: this.model,
@@ -356,7 +384,7 @@ export class TenderSummarizationService {
           'Answer in plain prose or short bullet points, under 250 words, with no preamble.',
         // ~4 chars per token; leave room in the context window for the prompt and answer.
         userPrompt: `Task: ${instruction}\n\nTender text:\n${text.slice(0, (AI_CONFIG.CONTEXT_TOKENS - 1024) * 3)}`,
-        inferenceOptions: { temperature: 0.1, max_tokens: 600 },
+        inferenceOptions: { temperature: 0.1, max_tokens: maxTokens },
       });
       if (result.success && result.data.content) return result.data.content;
       this.fallbackSections++;

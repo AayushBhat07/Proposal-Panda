@@ -40,9 +40,11 @@ const MODEL_SECTIONS: Record<string, ModelSection> = {
     brief:
       'Construction methodology for each major item of work, naming the specifications, grades and standards the ' +
       'tender text states (e.g. concrete grade, steel grade, MoRTH/CPWD specs), sequencing, quality assurance and ' +
-      'testing, and safety. Then a work programme as a list from Month 1 to the last month of the completion period ' +
-      'stated in the tender (use Month numbers, not calendar months), covering the whole period and allowing for monsoon. ' +
-      'Mention deployment of key technical staff and plant as [to be listed].',
+      'testing, and safety. Cover every component of the scope (e.g. foundations, superstructure, masonry, finishes, ' +
+      'services, roads, drainage) that the tender names. Then a work programme listing EVERY month from Month 1 to ' +
+      'Month {completionMonths} (Month numbers, not calendar months), allowing for monsoon. The defect liability period ' +
+      'starts after completion and is not part of the programme. ' +
+      'Mention deployment of key technical staff and plant as [to be listed]. End without disclaimers.',
     needsSource: true,
   },
   compliance: {
@@ -51,8 +53,10 @@ const MODEL_SECTIONS: Record<string, ModelSection> = {
     cover: 'technical',
     brief:
       'A clause-by-clause compliance statement: for each submission, EMD / performance security, eligibility and ' +
-      'legal requirement found in the analysis, one line stating how the bidder complies. Address each flagged risk ' +
-      'and submission trap factually. Do not comment on clauses the tender does not contain.',
+      'legal requirement found in the analysis, one line stating how the bidder complies. For eligibility criteria ' +
+      '(similar works, turnover, no-loss, solvency, bid capacity) never assert the bidder meets them: write ' +
+      '"Supporting documents enclosed at [Annexure __]; to be confirmed from company records." ' +
+      'Address each flagged risk and submission trap factually. Do not comment on clauses the tender does not contain.',
     needsSource: true,
   },
   queries: {
@@ -90,6 +94,9 @@ const SYSTEM_PROMPT =
   'Only for facts that are absent, write a bracketed placeholder such as [insert value]; never invent figures, dates, ' +
   'certificates or past projects. Always refer to the bidder by its company name, never a placeholder. ' +
   'Never add commitments beyond the tender conditions, and never state acceptance of risks or of clauses the tender lacks. ' +
+  'Never state that the bidder has any experience, completed works, turnover, profit, solvency or bid capacity ' +
+  'unless it is in the company profile; a false eligibility declaration gets a bid rejected and the contractor debarred. ' +
+  'Do not write dates; use [dd/mm/yyyy]. ' +
   'Write in formal English, ready for the contractor to edit. Output only the section body, without a heading.';
 
 export class BidModelUnavailableError extends Error {}
@@ -100,6 +107,7 @@ function buildContext(report: IntelligenceReport, company: CompanyProfile, nitRe
     `BIDDER: ${company.legalName}`,
     `TENDER: ${summary.metadata.tenderTitle}`,
     `NIT reference: ${nitRef}`,
+    `Completion period: ${summary.metadata.completionMonths ? `${summary.metadata.completionMonths} months` : 'see tender text'}`,
     `Executive summary: ${summary.executiveSummary}`,
     `Commercial terms: ${summary.commercialTerms}`,
     `Dates and obligations: ${summary.datesAndObligations}`,
@@ -145,7 +153,10 @@ export async function generateFoundationBid(
     const response = await generateWithLlm({
       model,
       systemPrompt: SYSTEM_PROMPT,
-      userPrompt: `${context}${needsSource ? sourceExcerpt : ''}\n\nWrite the "${section.title}" section of the bid. ${brief}`,
+      userPrompt: `${context}${needsSource ? sourceExcerpt : ''}\n\nWrite the "${section.title}" section of the bid. ${brief.replace(
+        '{completionMonths}',
+        String(report.summary.metadata.completionMonths ?? 'N (the completion period in the tender)')
+      )}`,
       inferenceOptions: { temperature: 0.3, max_tokens: 900 },
     });
     sections.push({ ...meta, source: 'model', content: response.content });

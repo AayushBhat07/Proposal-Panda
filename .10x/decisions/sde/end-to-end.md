@@ -31,3 +31,6 @@ Real run: analysis 32 s (qwen2.5:3b), bid 89 s (llama3), figures faithful, bid c
 - Prompts: bidder named, figures copied, programme in Month 1..N over the tender's completion period,
   no commitments beyond tender conditions, pre-bid queries skip what the tender already answers.
 - Per-section fallback counted in modelUsed; Integrity Pact in checklist; force-majeure flag reworded.
+- Round 4 (after run 2): NIT regex handles "(NIT) No."; completion months extracted and passed explicitly; bid never asserts
+  eligibility (experience/turnover/capacity) not in the company profile; eligibility summary capped and states applies/does not apply;
+  source excerpt = NIT head + spec/resource chunks from anywhere in the document.

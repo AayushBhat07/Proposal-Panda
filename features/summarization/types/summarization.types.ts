@@ -81,6 +81,8 @@ export interface TenderSummary {
     generatedAt: Date;
     /** NIT / tender reference number found in the document, if any */
     nitReference?: string;
+    /** Completion period in months found in the document, if any */
+    completionMonths?: number;
     /**
      * Ollama model tag; "<model> (+N extractive)" when N sections fell back;
      * 'extractive-fallback' when no local model was reachable
