@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   findDraftProblem,
+  isCodesIn,
   keyClauseLines,
+  redactUnknownStandards,
   MODEL_SECTIONS,
   parseProgramme,
   renderProgramme,
@@ -90,7 +92,13 @@ test('accepts tax IDs quoted exactly', () => {
 });
 
 test('rejects queries that say the tender lacks something', () => {
-  const q = '1. Considering the absence of a clear dispute resolution mechanism, please clarify.';
+  const q = [
+    '1. Considering the absence of a clear dispute resolution mechanism, please clarify.',
+    '2. Q2.',
+    '3. Q3.',
+    '4. Q4.',
+    '5. Q5.',
+  ].join('\n');
   assert.match(findDraftProblem(MODEL_SECTIONS.queries, q, facts) ?? '', /lacks/);
 });
 
@@ -145,9 +153,24 @@ test('letter is addressed to the inviting office', () => {
   assert.match(out, /^To,\nThe Executive Engineer,\nPune Central Division-II,\nNirman Bhawan,\nPune - 411001\n/);
 });
 
-test('programme must schedule the road when the scope has one', () => {
+test('programme schedules the road when the draft leaves it out', () => {
   const draft = 'Months 1-3: Foundations\nMonths 4-9: RCC frame\nMonths 10-18: Finishes';
-  assert.match(findDraftProblem(MODEL_SECTIONS.programme, draft, { ...facts, hasRoad: true }) ?? '', /road/);
+  const lines = renderProgramme(draft, 18, true).split('\n');
+  assert.equal(lines[15], 'Month 16: Finishes; approach road and drainage works (outside monsoon)');
+  assert.doesNotMatch(lines[14], /road/);
+});
+
+test('queries need at least five numbered lines', () => {
+  const one = '1. Please clarify RMC plant approval.';
+  assert.match(findDraftProblem(MODEL_SECTIONS.queries, one, facts) ?? '', /only 1/);
+});
+
+test('replaces IS codes the tender never mentions', () => {
+  const known = isCodesIn('Concrete to IS 10262:2019; AAC blocks to IS 2185 (Part 3).');
+  assert.equal(
+    redactUnknownStandards('APP membrane to IS 732:1973; mix to IS 10262:2019; blocks to IS 2185 Part 3.', known),
+    'APP membrane to [IS code as per tender]; mix to IS 10262:2019; blocks to IS 2185 Part 3.'
+  );
 });
 
 test('rejects price commitments and wrong road terms', () => {

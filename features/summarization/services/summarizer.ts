@@ -394,7 +394,8 @@ export class TenderSummarizationService {
       combinedText,
       'Extract as bullet points: eligibility criteria (similar works thresholds, average annual turnover, solvency, bid capacity formula); ' +
         'compensation for delay and its cap; price variation / escalation clause (e.g. 10CC) and whether it applies; ' +
-        'mobilisation or secured advance; security deposit and performance guarantee; dispute resolution, arbitration and venue. ' +
+        'mobilisation or secured advance; security deposit (how it is recovered, and separately when it is refunded); ' +
+        'performance guarantee (amount, deadline and any extension period); dispute resolution, arbitration and venue. ' +
         'Quote amounts, percentages and clause numbers exactly as written. For each clause, write "applies" or ' +
         '"does not apply" exactly as the tender states. Do not list documents to upload. Keep it under 200 words.',
       800
