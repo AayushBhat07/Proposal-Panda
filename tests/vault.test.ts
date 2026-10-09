@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createVault, memoryBackend, unlockVault, vaultSession, WrongPassphraseError } from '../lib/vault/vault';
-import { attachFromVault, mask, withIdentifiers } from '../lib/vault/bidVault';
+import { attachFromVault, mask, scrubIdentifiers, withIdentifiers } from '../lib/vault/bidVault';
 import { seal } from '../lib/vault/crypto';
 
 // Uses the real 600,000-round key derivation, so these tests also show unlocking stays fast enough.
@@ -75,6 +75,21 @@ test('checklist lines are marked attached only for documents the vault holds', (
   const docs = [{ id: '1', kind: 'gst' as const, name: 'gst.pdf', type: 'application/pdf', size: 1, uploadedAt: '', uploadedBy: '' }];
   assert.equal(
     attachFromVault(content, docs),
-    '3. GST registration certificate (GSTIN {GSTIN}) (attached from vault: gst.pdf)\n4. PAN card ({PAN}) [attach]\n5. EPF and ESI registration [attach]'
+    '3. GST registration certificate (GSTIN {GSTIN}) (attached from vault: GST registration certificate)\n4. PAN card ({PAN}) [attach]\n5. EPF and ESI registration [attach]'
   );
+});
+
+test('old bids lose their real GSTIN and PAN', () => {
+  assert.equal(
+    scrubIdentifiers('GSTIN 07ABCDE1234F1Z5, PAN ABCDE1234F', { gstin: '07ABCDE1234F1Z5', panNumber: 'ABCDE1234F' }),
+    'GSTIN {GSTIN}, PAN {PAN}'
+  );
+});
+
+test('a tampered iteration count is refused', async () => {
+  const backend = memoryBackend();
+  await createVault(backend, 'correct horse battery staple');
+  const header = backend.raw.get('header') as { iterations: number };
+  backend.raw.set('header', { ...header, iterations: 1e9 });
+  await assert.rejects(unlockVault(backend, 'correct horse battery staple'), /damaged/);
 });

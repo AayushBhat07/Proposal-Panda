@@ -11,8 +11,8 @@ import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
-import { MIN_PASSPHRASE, useVaultStore } from '@/lib/vault/vaultStore';
-import { mask } from '@/lib/vault/bidVault';
+import { MIN_PASSPHRASE, passphraseProblem, useVaultStore } from '@/lib/vault/vaultStore';
+import { mask, scrubStoredBids } from '@/lib/vault/bidVault';
 import { ALLOWED_TYPES, DOCUMENT_KINDS, MAX_FILE_BYTES, type AccessEntry, type DocumentKind, type VaultDocument } from '@/lib/vault/vault';
 
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
@@ -40,6 +40,7 @@ export default function VaultPage() {
     if (!gstin && !panNumber) return;
     (async () => {
       if (!identifiers) await session.saveIdentifiers({ gstin: gstin ?? '', pan: panNumber ?? '' });
+      scrubStoredBids({ gstin, panNumber });
       setCompanyProfile(rest);
       await refresh();
     })();
@@ -93,9 +94,10 @@ function SetUp({ busy, onSubmit }: { busy: boolean; onSubmit: (passphrase: strin
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
   const mismatch = confirm.length > 0 && confirm !== passphrase;
+  const weak = passphrase ? passphraseProblem(passphrase) : null;
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (passphrase.length >= MIN_PASSPHRASE && !mismatch) onSubmit(passphrase);
+    if (!weak && !mismatch) onSubmit(passphrase);
   };
   return (
     <form onSubmit={submit} className="flex max-w-xl flex-col gap-4 border border-rule-strong bg-sheet p-6">
@@ -112,9 +114,10 @@ function SetUp({ busy, onSubmit }: { busy: boolean; onSubmit: (passphrase: strin
         Type it again
         <input type="password" autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} className={field} />
       </label>
+      {weak && passphrase.length >= MIN_PASSPHRASE && <p className="text-sm text-seal">{weak}</p>}
       {mismatch && <p className="text-sm text-seal">The two passphrases don&apos;t match.</p>}
       <div>
-        <Button type="submit" isLoading={busy} disabled={busy || passphrase.length < MIN_PASSPHRASE || confirm !== passphrase}>
+        <Button type="submit" isLoading={busy} disabled={busy || !!weak || confirm !== passphrase}>
           <ShieldCheck className="h-4 w-4" aria-hidden />
           Create the vault
         </Button>
@@ -151,7 +154,8 @@ function Unlock({ busy, onSubmit, onErase }: { busy: boolean; onSubmit: (p: stri
         type="button"
         className="self-start text-sm text-muted underline hover:text-seal"
         onClick={() => {
-          if (window.confirm('Erase the vault? Every document and number in it is deleted from this computer for good.')) onErase();
+          const typed = window.prompt('Every document and number in the vault is deleted from this computer for good. Type ERASE to confirm.');
+          if (typed === 'ERASE') onErase();
         }}
       >
         Forgot the passphrase? Erase the vault and start again
@@ -174,6 +178,7 @@ function Unlocked({ run, busy }: { run: (action: () => Promise<void>) => Promise
       <div className="flex flex-wrap items-center justify-between gap-3 border-l-2 border-forest bg-forest-tint px-4 py-3">
         <p className="flex items-center gap-2 text-sm text-ink">
           <ShieldCheck className="h-4 w-4 text-forest" aria-hidden /> Unlocked on this computer.
+          {vault.createdAt && <span className="text-ink-soft">Vault created {when(vault.createdAt)}.</span>}
         </p>
         <Button variant="outline" size="sm" onClick={vault.lock}>
           <Lock className="h-4 w-4" aria-hidden /> Lock now

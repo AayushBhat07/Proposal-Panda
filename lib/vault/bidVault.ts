@@ -6,7 +6,9 @@
  * only at download time, from the unlocked vault.
  */
 
-import type { DocumentKind, Identifiers, VaultDocument } from './vault';
+import { getAllFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
+import type { FoundationBid } from '@/features/bid-generation/types/bid.types';
+import { DOCUMENT_KINDS, type DocumentKind, type Identifiers, type VaultDocument } from './vault';
 
 export const GSTIN_TOKEN = '{GSTIN}';
 export const PAN_TOKEN = '{PAN}';
@@ -50,14 +52,31 @@ export function checklistMatches(content: string, docs: VaultDocument[]): Array<
   });
 }
 
-/** Marks the matched lines as attached from the vault, by file name. */
+/** Marks the matched lines as attached from the vault, by document kind (file names can carry the PAN). */
 export function attachFromVault(content: string, docs: VaultDocument[]): string {
   const matches = new Map(checklistMatches(content, docs).map(m => [m.line, m.docs]));
   return content
     .split('\n')
     .map(line => {
       const found = matches.get(line);
-      return found ? line.replace('[attach]', `(attached from vault: ${found.map(d => d.name).join(', ')})`) : line;
+      return found ? line.replace('[attach]', `(attached from vault: ${DOCUMENT_KINDS[found[0].kind]})`) : line;
     })
     .join('\n');
+}
+
+/** Swaps real GSTIN and PAN for the tokens, for bids saved before the vault existed. */
+export function scrubIdentifiers(text: string, legacy: { gstin?: string; panNumber?: string }): string {
+  let out = text;
+  if (legacy.gstin) out = out.split(legacy.gstin).join(GSTIN_TOKEN);
+  if (legacy.panNumber) out = out.split(legacy.panNumber).join(PAN_TOKEN);
+  return out;
+}
+
+/** Rewrites every stored bid that still carries the real numbers. Safe to run on each page load. */
+export function scrubStoredBids(legacy: { gstin?: string; panNumber?: string }) {
+  if (!legacy.gstin && !legacy.panNumber) return;
+  for (const bid of getAllFromLocalStorage<FoundationBid & { id: string }>('foundationBids')) {
+    const sections = bid.sections.map(s => ({ ...s, content: scrubIdentifiers(s.content, legacy) }));
+    if (sections.some((s, i) => s.content !== bid.sections[i].content)) saveToLocalStorage('foundationBids', { ...bid, sections });
+  }
 }

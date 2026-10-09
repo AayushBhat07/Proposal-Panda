@@ -46,6 +46,8 @@ export interface AccessEntry {
 /** Unencrypted header: what's needed to derive the key and check the passphrase, nothing else. */
 interface Header {
   version: 1;
+  /** Shown on the page, so a vault erased and recreated is noticed. */
+  createdAt: string;
   salt: Uint8Array;
   iterations: number;
   verifier: Sealed;
@@ -69,8 +71,14 @@ export class WrongPassphraseError extends Error {
   }
 }
 
+/** When the vault on this computer was created, or null if there is none. */
+export async function vaultCreatedAt(backend: Backend): Promise<string | null> {
+  const header = await backend.get<Header>(HEADER);
+  return header ? (header.createdAt ?? '') : null;
+}
+
 export async function vaultExists(backend: Backend): Promise<boolean> {
-  return (await backend.get<Header>(HEADER)) !== undefined;
+  return (await vaultCreatedAt(backend)) !== null;
 }
 
 export async function createVault(backend: Backend, passphrase: string): Promise<CryptoKey> {
@@ -78,13 +86,23 @@ export async function createVault(backend: Backend, passphrase: string): Promise
   const salt = randomBytes(16);
   const key = await deriveKey(passphrase, salt);
   const verifier = await seal(key, HEADER, new TextEncoder().encode(VERIFIER));
-  await backend.put(HEADER, { version: 1, salt, iterations: PBKDF2_ITERATIONS, verifier } satisfies Header);
+  await backend.put(HEADER, {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    salt,
+    iterations: PBKDF2_ITERATIONS,
+    verifier,
+  } satisfies Header);
   return key;
 }
 
 export async function unlockVault(backend: Backend, passphrase: string): Promise<CryptoKey> {
   const header = await backend.get<Header>(HEADER);
   if (!header) throw new Error('No vault on this computer yet.');
+  // A tampered count could make unlocking hang or weaken the key.
+  if (!(header.iterations >= PBKDF2_ITERATIONS && header.iterations <= 5_000_000)) {
+    throw new Error('The vault header is damaged.');
+  }
   const key = await deriveKey(passphrase, header.salt, header.iterations);
   try {
     await open(key, HEADER, header.verifier);
