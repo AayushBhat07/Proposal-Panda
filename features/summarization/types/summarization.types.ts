@@ -95,6 +95,8 @@ export interface TenderSummary {
     keyTerms?: Array<{ label: string; text: string }>;
     /** Works (build/repair), supply (goods, GeM) or services (manpower, security, consultancy, O&M) */
     tenderKind?: 'works' | 'supply' | 'services';
+    /** IS codes and concrete / steel grades mentioned anywhere in the tender, to check drafts against */
+    standards?: { isCodes: string[]; grades: string[] };
     /** Name of work / subject as printed in the NIT, if found */
     nameOfWork?: string;
     /** For works tenders: a building, infrastructure (road, bridge, drain...) or maintenance / repair contract */
