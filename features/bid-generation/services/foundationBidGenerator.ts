@@ -13,8 +13,17 @@ import type { CompanyProfile } from '@/types/onboarding.types';
 import type { BidSection, FoundationBid } from '../types/bid.types';
 import { TEMPLATE_SECTIONS } from './bidTemplates';
 
-/** needsSource: also give the model the start of the raw tender text, for exact terms and specs. */
-type ModelSection = Omit<BidSection, 'content' | 'source'> & { brief: string; needsSource?: boolean };
+/**
+ * needsSource: also give the model the selected raw tender text, for exact terms and specs.
+ * check: extra format check on the draft; returns a problem description or undefined.
+ * finish: turns the checked draft into the final section text.
+ */
+type ModelSection = Omit<BidSection, 'content' | 'source'> & {
+  brief: string;
+  needsSource?: boolean;
+  check?: (content: string, months: number | undefined) => string | undefined;
+  finish?: (content: string, months: number | undefined) => string;
+};
 
 const MODEL_SECTIONS: Record<string, ModelSection> = {
   transmittal: {
@@ -25,7 +34,8 @@ const MODEL_SECTIONS: Record<string, ModelSection> = {
       'A formal letter of transmittal to the Executive Engineer / tender inviting authority, in the CPWD style: ' +
       'reference the NIT and work name, list the documents enclosed in Cover I (EMD, registration, financial ' +
       'information, similar works, affidavits), confirm the financial bid is submitted separately in Cover II, and ' +
-      'confirm acceptance of all tender conditions. Quote the NIT reference exactly as given. Do not mention any quoted price.',
+      'confirm acceptance of all tender conditions. Use the NIT reference and EMD from KEY FIGURES exactly. ' +
+      'Do not cite clause numbers and do not restate eligibility thresholds. Do not mention any quoted price.',
   },
   scope: {
     id: 'scope-understanding',
@@ -35,27 +45,40 @@ const MODEL_SECTIONS: Record<string, ModelSection> = {
   },
   methodology: {
     id: 'methodology',
-    title: 'Methodology and Work Programme',
+    title: 'Construction Methodology',
     cover: 'technical',
     brief:
       'Construction methodology for each major item of work, naming the specifications, grades and standards the ' +
-      'tender text states (e.g. concrete grade, steel grade, MoRTH/CPWD specs), sequencing, quality assurance and ' +
-      'testing, and safety. Cover every component of the scope (e.g. foundations, superstructure, masonry, finishes, ' +
-      'services, roads, drainage) that the tender names. Then a work programme listing EVERY month from Month 1 to ' +
-      'Month {completionMonths} (Month numbers, not calendar months), allowing for monsoon. The defect liability period ' +
-      'starts after completion and is not part of the programme. ' +
-      'Mention deployment of key technical staff and plant as [to be listed]. End without disclaimers.',
+      'tender text states (e.g. concrete grade, steel grade, MoRTH/CPWD specs), sequencing, and the quality tests ' +
+      'that apply to that item (not the same tests for every item), and safety. Cover every component of the scope ' +
+      'the tender names, including foundations, superstructure, masonry, finishes, waterproofing, water supply, ' +
+      'sanitary and electrical installations, roads, drainage and any GRIHA / green-building measures. ' +
+      'Mention deployment of key technical staff and plant as [to be listed]. Do not write a work programme. ' +
+      'End without disclaimers.',
     needsSource: true,
+  },
+  programme: {
+    id: 'work-programme',
+    title: 'Work Programme',
+    cover: 'technical',
+    brief:
+      'A month-by-month work programme. Write exactly one line per month, from "Month 1:" to "Month {completionMonths}:", ' +
+      'each followed by the activities in that month, allowing for monsoon. Output only those lines.',
+    check: (content, months) =>
+      !/Month\s*1\b/i.test(content) ? 'it has no month-by-month lines'
+      : months && !new RegExp(`Month\\s*${months}\\b`, 'i').test(content) ? `it does not reach Month ${months}` : undefined,
+    finish: (content, months) => renderProgramme(content, months),
   },
   compliance: {
     id: 'compliance-statement',
     title: 'Compliance with Tender Conditions',
     cover: 'technical',
     brief:
-      'A clause-by-clause compliance statement: for each submission, EMD / performance security, eligibility and ' +
-      'legal requirement found in the analysis, one line stating how the bidder complies. For eligibility criteria ' +
-      '(similar works, turnover, no-loss, solvency, bid capacity) never assert the bidder meets them: write ' +
-      '"Supporting documents enclosed at [Annexure __]; to be confirmed from company records." ' +
+      'A clause-by-clause compliance statement: for each submission, EMD, performance security, security deposit, ' +
+      'advance, eligibility and legal requirement found in the analysis, one line stating how the bidder complies. ' +
+      'For eligibility criteria (similar works, turnover, no-loss, solvency, bid capacity) never assert the bidder ' +
+      'meets them: write "Supporting documents enclosed at [Annexure __]; to be confirmed from company records." ' +
+      'Where the analysis says a clause does not apply (e.g. price variation 10CC), say it does not apply. ' +
       'Address each flagged risk and submission trap factually. Do not comment on clauses the tender does not contain.',
     needsSource: true,
   },
@@ -64,14 +87,49 @@ const MODEL_SECTIONS: Record<string, ModelSection> = {
     title: 'Pre-bid Queries and Clarifications',
     cover: 'technical',
     brief:
-      'Numbered pre-bid queries the contractor should raise with the department. Never ask about anything the ' +
-      'tender already states clearly (deadlines, EMD, forms). Focus on ambiguous or onerous conditions: delay ' +
-      'compensation and its cap, price variation / escalation, advances, how security deposit is recovered, ' +
-      'third-party approvals or certification costs, site access and utilities. Cite the clause where possible. ' +
-      'Keep each query to one or two sentences.',
-    needsSource: true,
+      'Numbered pre-bid queries (1., 2., ...) the contractor should raise with the department, and nothing else. ' +
+      'Never ask about anything the tender already states clearly (deadlines, EMD, forms). Focus on ambiguous or ' +
+      'onerous conditions: delay compensation and its cap, price variation / escalation, advances, how security ' +
+      'deposit is recovered, third-party approvals or certification costs, site access and utilities. Cite the ' +
+      'clause where possible. Keep each query to one or two sentences.',
+    check: content => (/^\s*1[.)]\s/m.test(content) ? undefined : 'it has no numbered queries'),
   },
 };
+
+/** Statements a draft must never make: they are eligibility facts only company records can supply. */
+const INVENTED_CLAIMS =
+  /\b(?:our|the) (?:company|firm)\b[^.]{0,40}\b(?:has|have|had) (?:successfully )?(?:completed|executed)|\bturnover\b[^.]{0,80}\bwas (?:Rs|INR|₹)|\b(?:our|its) [^.]{0,30}\bturnover\b[^.]{0,60}\b(?:is|of) (?:Rs|INR|₹)|has not (?:incurred|suffered) (?:any )?loss|(?:have|has|possess) (?:the )?(?:necessary|requisite|adequate) (?:technical |financial )?(?:capabilit|capacit|experience)|we (?:meet|fulfil|fulfill|satisfy) (?:all )?(?:the )?eligibility/i;
+
+/** Returns why a model draft can't be used, or undefined if it passes. */
+export function findDraftProblem(section: ModelSection, content: string, months?: number): string | undefined {
+  const claim = content.match(INVENTED_CLAIMS);
+  if (claim) return `it states company facts not in the profile ("${claim[0]}")`;
+  return section.check?.(content, months);
+}
+
+/** One line per month from Month 1 to the completion month; ranges are expanded, defect liability is dropped. */
+export function renderProgramme(draft: string, months: number | undefined): string {
+  const byMonth = new Map<number, string>();
+  for (const line of draft.split('\n')) {
+    const m = line.match(/Months?\s*(\d{1,2})(?:\s*(?:-|–|to)\s*(?:Month\s*)?(\d{1,2}))?\s*[:|\-–]\s*(.+)/i);
+    if (!m) continue;
+    const activities = m[3].replace(/[,;]?\s*(?:and )?defect liability period[^,;.]*/gi, '').trim().replace(/[,;]$/, '');
+    if (!activities) continue;
+    const from = Number(m[1]);
+    const to = m[2] ? Number(m[2]) : from;
+    for (let month = from; month <= to; month++) if (!byMonth.has(month)) byMonth.set(month, activities);
+  }
+  const last = months ?? Math.max(0, ...byMonth.keys());
+  const lines = Array.from({ length: last }, (_, i) => `Month ${i + 1}: ${byMonth.get(i + 1) ?? '[activities to be planned]'}`);
+  return [
+    ...lines,
+    '',
+    'The defect liability period runs from the date of completion and is not part of this programme.',
+  ].join('\n');
+}
+
+const EDIT_NEEDED = (problem: string) =>
+  `[Edit needed: the local model's draft of this section was withheld because ${problem}. Write this section manually.]`;
 
 /** Final order of the bid, mixing model-drafted sections and standard proformas. */
 const BID_ORDER: Array<ModelSection | (typeof TEMPLATE_SECTIONS)[number]> = [
@@ -81,6 +139,7 @@ const BID_ORDER: Array<ModelSection | (typeof TEMPLATE_SECTIONS)[number]> = [
   TEMPLATE_SECTIONS.find(t => t.id === 'bid-capacity')!,
   MODEL_SECTIONS.scope,
   MODEL_SECTIONS.methodology,
+  MODEL_SECTIONS.programme,
   MODEL_SECTIONS.compliance,
   MODEL_SECTIONS.queries,
   TEMPLATE_SECTIONS.find(t => t.id === 'financial-bid')!,
@@ -101,13 +160,22 @@ const SYSTEM_PROMPT =
 
 export class BidModelUnavailableError extends Error {}
 
-function buildContext(report: IntelligenceReport, company: CompanyProfile, nitRef: string): string {
+function buildKeyFigures(report: IntelligenceReport, nitRef: string): string {
+  const { metadata } = report.summary;
+  return [
+    'KEY FIGURES (copy exactly):',
+    `- NIT reference: ${nitRef}`,
+    `- Name of work: ${metadata.tenderTitle}`,
+    `- Estimated cost: ${metadata.estimatedCost ?? '[insert value]'}`,
+    `- EMD: ${metadata.emdAmount ?? '[insert value]'}`,
+    `- Completion period: ${metadata.completionMonths ? `${metadata.completionMonths} months` : '[insert period]'}`,
+  ].join('\n');
+}
+
+function buildContext(report: IntelligenceReport, company: CompanyProfile): string {
   const { summary, compliance } = report;
   return [
     `BIDDER: ${company.legalName}`,
-    `TENDER: ${summary.metadata.tenderTitle}`,
-    `NIT reference: ${nitRef}`,
-    `Completion period: ${summary.metadata.completionMonths ? `${summary.metadata.completionMonths} months` : 'see tender text'}`,
     `Executive summary: ${summary.executiveSummary}`,
     `Commercial terms: ${summary.commercialTerms}`,
     `Dates and obligations: ${summary.datesAndObligations}`,
@@ -135,12 +203,12 @@ export async function generateFoundationBid(
 
   const tenderId = report.summary.metadata.tenderId;
   const tenderTitle = report.summary.metadata.tenderTitle;
+  const months = report.summary.metadata.completionMonths;
   // The internal tenderId never goes into the bid; only the reference printed on the NIT does.
   const nitRef = report.summary.metadata.nitReference ?? '[NIT No.]';
-  const context = buildContext(report, company, nitRef);
-  const sourceExcerpt = report.summary.sourceText
-    ? `\n\nTENDER TEXT (start of document):\n${report.summary.sourceText}`
-    : '';
+  const keyFigures = buildKeyFigures(report, nitRef);
+  const context = buildContext(report, company);
+  const sourceExcerpt = report.summary.sourceText ? `\n\nTENDER TEXT (selected extracts):\n${report.summary.sourceText}` : '';
   const sections: BidSection[] = [];
   // Sequential: a local Ollama serves one generation at a time.
   for (const section of BID_ORDER) {
@@ -149,17 +217,33 @@ export async function generateFoundationBid(
       sections.push({ ...meta, content: render({ nitRef, tenderTitle, company }) });
       continue;
     }
-    const { brief, needsSource, ...meta } = section;
-    const response = await generateWithLlm({
-      model,
-      systemPrompt: SYSTEM_PROMPT,
-      userPrompt: `${context}${needsSource ? sourceExcerpt : ''}\n\nWrite the "${section.title}" section of the bid. ${brief.replace(
-        '{completionMonths}',
-        String(report.summary.metadata.completionMonths ?? 'N (the completion period in the tender)')
-      )}`,
-      inferenceOptions: { temperature: 0.3, max_tokens: 900 },
+    const { id, title, cover, brief, needsSource, finish } = section;
+    const meta = { id, title, cover };
+    const task = `Write the "${section.title}" section of the bid for ${company.legalName}. ${brief.replace(
+      '{completionMonths}',
+      String(months ?? 'N (the completion period in the tender)')
+    )}`;
+    // The task goes before and after the long context: Llama 3 drifts when it only comes last.
+    const userPrompt = `${task}\n\n${keyFigures}\n\n${context}${needsSource ? sourceExcerpt : ''}\n\nREMINDER: ${task}`;
+
+    let content = '';
+    let problem: string | undefined;
+    for (const temperature of [0.3, 0.1]) {
+      const response = await generateWithLlm({
+        model,
+        systemPrompt: SYSTEM_PROMPT,
+        userPrompt,
+        inferenceOptions: { temperature, max_tokens: 900 },
+      });
+      content = response.content;
+      problem = findDraftProblem(section, content, months);
+      if (!problem) break;
+    }
+    sections.push({
+      ...meta,
+      source: 'model',
+      content: problem ? EDIT_NEEDED(problem) : finish ? finish(content, months) : content,
     });
-    sections.push({ ...meta, source: 'model', content: response.content });
   }
 
   return {
