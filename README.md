@@ -23,24 +23,30 @@ click through the whole flow. Point `OLLAMA_BASE_URL` at it if it isn't on port 
 1. **Sign in** with a demo account (password `password` in development).
 2. **Onboarding**: company profile, used in the bid.
 3. **Dashboard → Upload tender**: `/api/intelligence/run` extracts text (PDF text layer or DOCX),
-   summarises six sections with `OLLAMA_ANALYSIS_MODEL`, then scores compliance and risk with
-   rules over that summary. If Ollama is down, summaries fall back to keyword extracts and the
+   summarises six sections with Qwen (`OLLAMA_ANALYSIS_MODEL`), then scores compliance and risk with
+   deterministic rules over that summary. If Ollama is down, summaries fall back to keyword extracts and the
    analysis page says so.
-4. **Analysis → Foundation Bid**: `/api/bid/generate` drafts six sections (covering letter, scope,
-   technical approach, work plan, compliance statement, commercial notes) with `OLLAMA_BID_MODEL`.
-   Figures the tender doesn't state are left as `[placeholders]`. Download as Markdown.
+4. **Analysis → Foundation Bid**: `/api/bid/generate` builds a bid in the Indian two-bid format
+   (CPWD / state PWD):
+   - **Cover I, Technical Bid**: letter of transmittal, document checklist (EMD, GST, PAN, EPF/ESI,
+     registration, turnover, solvency, similar works, affidavits), tender acceptance letter, site-inspection
+     declaration and non-blacklisting affidavit, similar works and bid capacity (2·A·N − B), understanding
+     of scope, methodology and work programme, compliance with tender conditions, pre-bid queries.
+   - **Cover II, Financial Bid**: percentage-rate / item-rate quotation proforma. Prices are never generated.
+
+   Narrative sections are drafted by Llama 3 (`OLLAMA_BID_MODEL`); proformas are filled from the company
+   profile. Anything the contractor must supply is left as a `[placeholder]`. Download as Markdown.
 
 ## Roles
 
 Defined once in `lib/auth/rbac.ts`; enforced in `proxy.ts` and in each API route.
 
-| Role | Demo account | Upload & analyse | Generate tender | Generate bid | View tenders & bids |
-|---|---|---|---|---|---|
-| Admin | admin@proposalpanda.dev | ✓ | ✓ | ✓ | ✓ |
-| Tender Analyst | analyst@proposalpanda.dev | ✓ | | | ✓ |
-| Bid Writer | writer@proposalpanda.dev | ✓ | ✓ | ✓ | ✓ |
-| Compliance Reviewer | reviewer@proposalpanda.dev | | | | ✓ |
-| Executive | exec@proposalpanda.dev | | | | ✓ |
+| Role | Demo account | Upload & analyse | Generate bid | View tenders & bids |
+|---|---|---|---|---|
+| Admin | admin@proposalpanda.dev | ✓ | ✓ | ✓ |
+| Bid Writer | writer@proposalpanda.dev | ✓ | ✓ | ✓ |
+| Tender Analyst | analyst@proposalpanda.dev | ✓ | | ✓ |
+| Viewer (owner, reviewer, management) | viewer@proposalpanda.dev | | | ✓ |
 
 The role is carried in a signed HttpOnly cookie, so it can't be changed from the browser. Users are a
 demo directory in `lib/auth/users.ts`; swap `findUser()` for a real user store.

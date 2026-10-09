@@ -6,7 +6,7 @@
  */
 
 import { AI_CONFIG } from '@/lib/config/constants';
-import { checkLlmHealth, generateWithLlmSafe } from '@/features/ai-generation/services/localLlmService';
+import { checkLlmHealth, generateWithLlmSafe } from '@/lib/llm/ollama';
 
 import type {
   TenderDocumentInput,
@@ -17,18 +17,16 @@ import type {
 } from '../types/summarization.types';
 
 /**
- * BART Summarization Service
- * Uses local BART model for faithful, non-interpretive summarization
- * 
+ * Tender summarization service (local Qwen model via Ollama)
+ *
  * RULES:
- * - BART ONLY (no LLaMA, no GPT, no reasoning models)
- * - Extractive/abstractive summarization only
+ * - Faithful summarization only
  * - No hallucination
  * - No interpretation
  * - No judgment
  * - No scoring
  */
-export class BARTSummarizationService {
+export class TenderSummarizationService {
   private model: string;
   private useLocalModel = false;
   private maxTokensPerChunk: number;
@@ -42,7 +40,7 @@ export class BARTSummarizationService {
 
   /**
    * Summarize tender document
-   * Main entry point for BART-based summarization
+   * Main entry point for summarization
    */
   async summarizeTender(
     input: TenderDocumentInput,
@@ -119,8 +117,7 @@ export class BARTSummarizationService {
   }
 
   /**
-   * Chunk text for BART processing
-   * BART has token limits (1024 typically), so we need to chunk long documents
+   * Chunk text so each model call stays inside the context window
    */
   private chunkText(fullText: string, chapters?: TenderDocumentInput['chapters']): TextChunk[] {
     const chunks: TextChunk[] = [];
@@ -400,4 +397,4 @@ export class BARTSummarizationService {
 /**
  * Singleton instance for global use
  */
-export const bartSummarizationService = new BARTSummarizationService();
+export const tenderSummarizationService = new TenderSummarizationService();

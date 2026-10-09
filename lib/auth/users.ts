@@ -15,8 +15,7 @@ const DEMO_USERS: DirectoryUser[] = [
   { email: 'admin@proposalpanda.dev', name: 'Asha Admin', role: 'Admin' },
   { email: 'analyst@proposalpanda.dev', name: 'Tarun Analyst', role: 'TenderAnalyst' },
   { email: 'writer@proposalpanda.dev', name: 'Bina Writer', role: 'BidWriter' },
-  { email: 'reviewer@proposalpanda.dev', name: 'Ravi Reviewer', role: 'ComplianceReviewer' },
-  { email: 'exec@proposalpanda.dev', name: 'Esha Executive', role: 'Executive' },
+  { email: 'viewer@proposalpanda.dev', name: 'Vikram Viewer', role: 'Viewer' },
 ];
 
 export const DEMO_EMAILS = DEMO_USERS.map(u => u.email);

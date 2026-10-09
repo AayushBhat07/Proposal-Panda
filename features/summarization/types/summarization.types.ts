@@ -1,6 +1,6 @@
 /**
  * PHASE 4A: Tender Summarization Types
- * Defines structured output for BART-based post-generation summarization
+ * Defines structured output for tender summarization
  */
 
 /**
@@ -101,7 +101,7 @@ export interface TenderDocumentInput {
 }
 
 /**
- * Text chunk for processing with BART
+ * Text chunk for summarization
  */
 export interface TextChunk {
   index: number;
@@ -115,12 +115,12 @@ export interface TextChunk {
  */
 export interface SummarizationOptions {
   /**
-   * Model to use (default: BART-large-cnn)
+   * Ollama model tag (default: AI_CONFIG.ANALYSIS_MODEL)
    */
   model?: string;
 
   /**
-   * Maximum tokens per chunk (default: 1024 for BART)
+   * Maximum tokens per chunk (default: 1024)
    */
   maxTokensPerChunk?: number;
 

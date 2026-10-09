@@ -13,7 +13,6 @@ import type { Permission } from '@/lib/auth/rbac';
 // Only pages that exist; each is shown only to roles that can open it.
 const NAV_ITEMS: Array<{ id: string; label: string; icon: string; href: string; permission?: Permission }> = [
   { id: 'dashboard', label: 'Dashboard', icon: '▦', href: '/dashboard' },
-  { id: 'generate', label: 'Generate Tender', icon: '📝', href: '/generate', permission: 'tender.create' },
 ];
 
 export default function Sidebar() {

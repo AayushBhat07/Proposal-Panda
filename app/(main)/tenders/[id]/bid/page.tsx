@@ -11,7 +11,12 @@ import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
-import type { FoundationBid } from '@/features/bid-generation';
+import type { BidCover, FoundationBid } from '@/features/bid-generation';
+
+const COVERS: Array<{ cover: BidCover; title: string }> = [
+  { cover: 'technical', title: 'Cover I: Technical Bid' },
+  { cover: 'financial', title: 'Cover II: Financial Bid' },
+];
 
 type StoredBid = FoundationBid & { id: string };
 
@@ -56,7 +61,13 @@ export default function FoundationBidPage() {
 
   const handleDownload = () => {
     if (!bid) return;
-    const markdown = [`# Bid: ${bid.tenderTitle}`, ...bid.sections.map(s => `## ${s.title}\n\n${s.content}`)].join('\n\n');
+    const markdown = [
+      `# Bid: ${bid.tenderTitle} (${bid.tenderId})`,
+      ...COVERS.flatMap(({ cover, title }) => [
+        `# ${title}`,
+        ...bid.sections.filter(s => s.cover === cover).map(s => `## ${s.title}\n\n${s.content}`),
+      ]),
+    ].join('\n\n');
     const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown' }));
     const link = document.createElement('a');
     link.href = url;
@@ -138,12 +149,24 @@ export default function FoundationBidPage() {
       )}
 
       {bid && (
-        <div className="space-y-6">
-          {bid.sections.map(section => (
-            <section key={section.id} className="bg-white border border-gray-200 rounded-lg p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">{section.title}</h2>
-              <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{section.content}</div>
-            </section>
+        <div className="space-y-10">
+          {COVERS.map(({ cover, title }) => (
+            <div key={cover} className="space-y-6">
+              <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+              {bid.sections
+                .filter(section => section.cover === cover)
+                .map(section => (
+                  <section key={section.id} className="bg-white border border-gray-200 rounded-lg p-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-lg font-semibold text-gray-900">{section.title}</h3>
+                      <span className="text-xs text-gray-500">
+                        {section.source === 'model' ? `Drafted by ${bid.modelUsed}` : 'Standard proforma'}
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{section.content}</div>
+                  </section>
+                ))}
+            </div>
           ))}
         </div>
       )}

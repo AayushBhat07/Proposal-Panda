@@ -1,6 +1,6 @@
 /**
  * Local LLM Service
- * Handles communication with Ollama for LLaMA-3 8B Instruct
+ * The one Ollama client: Llama 3 for bids (AI_CONFIG.MODEL_NAME), Qwen for analysis (AI_CONFIG.ANALYSIS_MODEL)
  */
 
 import { AI_CONFIG } from '@/lib/config/constants';
@@ -9,7 +9,7 @@ import type {
   LlmGenerationResponse,
   LlmError,
   LlmHealthCheck,
-} from '../types/aiGeneration.types';
+} from './types';
 
 /**
  * Ollama API response structure

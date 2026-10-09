@@ -17,24 +17,24 @@ test('every role can view tenders and bids', () => {
   }
 });
 
-test('Executive and ComplianceReviewer cannot upload', () => {
-  assert.equal(can('Executive', 'tender.upload'), false);
-  assert.equal(can('ComplianceReviewer', 'tender.upload'), false);
+test('Viewer cannot upload or generate', () => {
+  assert.equal(can('Viewer', 'tender.upload'), false);
+  assert.equal(can('Viewer', 'bid.generate'), false);
+  assert.equal(can('TenderAnalyst', 'bid.generate'), false);
   assert.equal(can(null, 'tender.view'), false);
 });
 
 test('routes map to permissions', () => {
   assert.equal(permissionForPath('/api/bid/generate'), 'bid.generate');
   assert.equal(permissionForPath('/api/intelligence/run'), 'tender.upload');
-  assert.equal(permissionForPath('/generate'), 'tender.create');
   assert.equal(permissionForPath('/tenders/T-1/bid'), 'bid.view');
   assert.equal(permissionForPath('/tenders/T-1/analysis'), 'tender.view');
   assert.equal(permissionForPath('/dashboard'), null);
 });
 
 test('session round-trips and rejects tampering', async () => {
-  const token = await signSession({ email: 'exec@proposalpanda.dev', name: 'E', role: 'Executive' });
-  assert.equal((await verifySession(token))?.role, 'Executive');
+  const token = await signSession({ email: 'viewer@proposalpanda.dev', name: 'V', role: 'Viewer' });
+  assert.equal((await verifySession(token))?.role, 'Viewer');
 
   const [payload, signature] = token.split('.');
   const forged = Buffer.from(

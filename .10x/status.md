@@ -1,5 +1,5 @@
 # Status
-Phase: Verification complete, draft PR open. Waiting on user answers (roles, models, bid contents, keep Generate Tender, auth/DB plans).
+Phase: Round 2 (user answers applied): roles trimmed, Generate Tender removed, Llama 3 + Qwen only, CPWD-style bid.
 - [x] RBAC: single role model, signed session, proxy + API enforcement
 - [x] Upload → /api/intelligence/run, PDF extraction, Ollama summaries
 - [x] Foundation bid generation

@@ -1,54 +1,81 @@
 /**
  * Foundation bid generation (server-side).
- * Drafts each bid section with the local generation model (AI_CONFIG.MODEL_NAME) through Ollama,
- * using the tender analysis and the contractor's company profile as the only sources.
+ * Follows the Indian two-bid structure (CPWD / state PWD): Cover I technical bid with letter of transmittal,
+ * document checklist, declarations, eligibility and bid capacity, scope, methodology, compliance and pre-bid
+ * queries; Cover II price bid. Narrative sections come from the local Llama 3 model (AI_CONFIG.MODEL_NAME);
+ * standard proformas come from bidTemplates.ts.
  */
 
 import { AI_CONFIG } from '@/lib/config/constants';
-import { checkLlmHealth, generateWithLlm } from '@/features/ai-generation/services/localLlmService';
+import { checkLlmHealth, generateWithLlm } from '@/lib/llm/ollama';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator/types/orchestration.types';
 import type { CompanyProfile } from '@/types/onboarding.types';
 import type { BidSection, FoundationBid } from '../types/bid.types';
+import { TEMPLATE_SECTIONS } from './bidTemplates';
 
-const SECTIONS: Array<{ id: string; title: string; brief: string }> = [
-  {
-    id: 'cover-letter',
-    title: 'Covering Letter',
-    brief: 'A formal covering letter from the contractor to the tendering authority submitting this bid.',
+type ModelSection = Omit<BidSection, 'content' | 'source'> & { brief: string };
+
+const MODEL_SECTIONS: Record<string, ModelSection> = {
+  transmittal: {
+    id: 'letter-of-transmittal',
+    title: 'Letter of Transmittal',
+    cover: 'technical',
+    brief:
+      'A formal letter of transmittal to the Executive Engineer / tender inviting authority, in the CPWD style: ' +
+      'reference the NIT and work name, list the documents enclosed in Cover I (EMD, registration, financial ' +
+      'information, similar works, affidavits), confirm the financial bid is submitted separately in Cover II, and ' +
+      'confirm acceptance of all tender conditions. Do not mention any quoted price.',
   },
-  {
+  scope: {
     id: 'scope-understanding',
-    title: 'Understanding of Scope',
-    brief: 'Restate the scope of work, location and key deliverables to show the contractor understood the tender.',
+    title: 'Understanding of Scope of Work',
+    cover: 'technical',
+    brief: 'Restate the scope of work, location, completion period and key deliverables to show the tender was understood.',
   },
-  {
-    id: 'technical-approach',
-    title: 'Technical Approach and Methodology',
-    brief: 'How the works will be executed: sequencing, methods for each major work category, quality control and safety.',
+  methodology: {
+    id: 'methodology',
+    title: 'Methodology and Work Programme',
+    cover: 'technical',
+    brief:
+      'Construction methodology for each major item of work (as per CPWD/MoRTH specifications named in the tender), ' +
+      'sequencing, quality assurance and testing, safety, and a month-wise work programme (bar-chart style list) ' +
+      'that fits the completion period. Mention deployment of key technical staff and plant as [to be listed].',
   },
-  {
-    id: 'work-plan',
-    title: 'Work Plan and Schedule',
-    brief: 'Phase-wise work plan that fits the completion period in the tender, as a list of phases with durations.',
-  },
-  {
+  compliance: {
     id: 'compliance-statement',
-    title: 'Compliance Statement',
+    title: 'Compliance with Tender Conditions',
+    cover: 'technical',
     brief:
-      'A checklist of each submission, financial (EMD, performance security) and legal requirement in the tender, ' +
-      'with a line stating how the contractor will comply. Address the flagged risks and submission traps.',
+      'A clause-by-clause compliance statement: for each submission, EMD / performance security, eligibility and ' +
+      'legal requirement found in the analysis, one line stating how the bidder complies. Address each flagged risk ' +
+      'and submission trap explicitly.',
   },
-  {
-    id: 'commercial-notes',
-    title: 'Commercial Notes and Assumptions',
+  queries: {
+    id: 'pre-bid-queries',
+    title: 'Pre-bid Queries and Clarifications',
+    cover: 'technical',
     brief:
-      'Commercial assumptions, exclusions and clarifications to raise with the authority. ' +
-      'Do not quote any rates or totals; leave pricing as [to be priced from BOQ].',
+      'Numbered pre-bid queries the contractor should raise with the department about ambiguous, missing or ' +
+      'onerous conditions in the analysis. Keep each query to one or two sentences.',
   },
+};
+
+/** Final order of the bid, mixing model-drafted sections and standard proformas. */
+const BID_ORDER: Array<ModelSection | (typeof TEMPLATE_SECTIONS)[number]> = [
+  MODEL_SECTIONS.transmittal,
+  TEMPLATE_SECTIONS.find(t => t.id === 'document-checklist')!,
+  TEMPLATE_SECTIONS.find(t => t.id === 'declarations')!,
+  TEMPLATE_SECTIONS.find(t => t.id === 'bid-capacity')!,
+  MODEL_SECTIONS.scope,
+  MODEL_SECTIONS.methodology,
+  MODEL_SECTIONS.compliance,
+  MODEL_SECTIONS.queries,
+  TEMPLATE_SECTIONS.find(t => t.id === 'financial-bid')!,
 ];
 
 const SYSTEM_PROMPT =
-  'You draft bid documents for an Indian civil-works contractor responding to a government tender. ' +
+  'You draft bid documents for an Indian civil-works contractor responding to a CPWD / state PWD tender ' +
+  'under the two-bid system (Cover I technical, Cover II financial). ' +
   'Use only the facts in the tender analysis and company profile provided. ' +
   'Never invent figures, dates, certificates or past projects: write a bracketed placeholder such as [insert value] instead. ' +
   'Write in formal English, ready for the contractor to edit. Output only the section body, without a heading.';
@@ -84,21 +111,29 @@ export async function generateFoundationBid(
   }
 
   const context = buildContext(report, company);
+  const tenderId = report.summary.metadata.tenderId;
+  const tenderTitle = report.summary.metadata.tenderTitle;
   const sections: BidSection[] = [];
   // Sequential: a local Ollama serves one generation at a time.
-  for (const section of SECTIONS) {
+  for (const section of BID_ORDER) {
+    if ('render' in section) {
+      const { render, ...meta } = section;
+      sections.push({ ...meta, content: render({ tenderId, tenderTitle, company }) });
+      continue;
+    }
+    const { brief, ...meta } = section;
     const response = await generateWithLlm({
       model,
       systemPrompt: SYSTEM_PROMPT,
-      userPrompt: `${context}\n\nWrite the "${section.title}" section of the bid. ${section.brief}`,
+      userPrompt: `${context}\n\nWrite the "${section.title}" section of the bid. ${brief}`,
       inferenceOptions: { temperature: 0.3, max_tokens: 900 },
     });
-    sections.push({ id: section.id, title: section.title, content: response.content });
+    sections.push({ ...meta, source: 'model', content: response.content });
   }
 
   return {
-    tenderId: report.summary.metadata.tenderId,
-    tenderTitle: report.summary.metadata.tenderTitle,
+    tenderId,
+    tenderTitle,
     generatedAt: new Date().toISOString(),
     modelUsed: health.modelName ?? model,
     sections,

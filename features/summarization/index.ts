@@ -1,10 +1,10 @@
 /**
  * PHASE 4A: Tender Summarization Feature
- * BART-based post-generation summarization
+ * Tender summarization with the local Qwen model
  * 
  * SCOPE:
  * - Extract text from generated tenders
- * - Chunk and process with BART
+ * - Chunk and summarise with Qwen via Ollama
  * - Generate 6-section structured summary
  * - Export to JSON, Markdown, and text formats
  * 
