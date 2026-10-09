@@ -359,7 +359,7 @@ export function findWorksType(nameOfWork: string | undefined, text: string): Wor
 /** IS codes ("IS 1786" -> "1786") and concrete / steel grades ("M25", "Fe500") the whole tender mentions. */
 export function findStandards(text: string): { isCodes: string[]; grades: string[] } {
   const isCodes = [...text.matchAll(/\bIS[:\s]*(\d{3,5})/g)].map(m => m[1]);
-  const grades = [...text.matchAll(/\b(?:M\s?-?\s?(\d{2})|Fe\s?-?\s?(\d{3})\s?(?:D)?)\b/g)].map(m => (m[1] ? `M${m[1]}` : `Fe${m[2]}`));
+  const grades = [...text.matchAll(/\b(?:M\s?[-‐–]?\s?(\d{2})|Fe\s?[-‐–]?\s?(\d{3})\s?(?:D)?)\b/g)].map(m => (m[1] ? `M${m[1]}` : `Fe${m[2]}`));
   return { isCodes: [...new Set(isCodes)], grades: [...new Set(grades)] };
 }
 
