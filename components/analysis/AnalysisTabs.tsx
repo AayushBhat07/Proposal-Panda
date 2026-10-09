@@ -52,8 +52,8 @@ export default function AnalysisTabs({ activeTab, onTabChange, children }: Analy
   };
 
   return (
-    <div className="bg-white border-b border-gray-200">
-      <div className="flex items-center gap-1 px-6" role="tablist" aria-label="Analysis sections">
+    <div>
+      <div className="flex flex-wrap gap-x-7 border-b border-rule" role="tablist" aria-label="Analysis sections">
         {TABS.map(tab => (
           <button
             key={tab.id}
@@ -65,12 +65,11 @@ export default function AnalysisTabs({ activeTab, onTabChange, children }: Analy
             id={`tab-${tab.id}`}
             tabIndex={activeTab === tab.id ? 0 : -1}
             className={`
-              px-4 py-3 text-sm font-medium border-b-2 transition-colors
-              focus:outline-none focus:ring-2 focus:ring-amber-900 focus:ring-offset-2 rounded-t
+              -mb-px min-h-11 border-b-2 text-[15px] transition-colors
               ${
                 activeTab === tab.id
-                  ? 'border-amber-900 text-amber-900'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
+                  ? 'border-ink font-medium text-ink'
+                  : 'border-transparent text-muted hover:text-ink'
               }
             `}
           >
@@ -78,7 +77,7 @@ export default function AnalysisTabs({ activeTab, onTabChange, children }: Analy
           </button>
         ))}
       </div>
-      <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
+      <div role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`} className="pt-8">
         {children}
       </div>
     </div>
