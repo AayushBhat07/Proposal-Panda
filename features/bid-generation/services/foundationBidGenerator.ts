@@ -12,6 +12,7 @@ import type { IntelligenceReport } from '@/features/intelligence-orchestrator/ty
 import type { CompanyProfile } from '@/types/onboarding.types';
 import type { BidSection, FoundationBid } from '../types/bid.types';
 import { TEMPLATE_SECTIONS } from './bidTemplates';
+import { GSTIN_TOKEN, PAN_TOKEN } from '@/lib/vault/bidVault';
 
 /** Tender facts the draft checks compare against. */
 export interface DraftFacts {
@@ -398,8 +399,10 @@ function buildContext(report: IntelligenceReport, company: CompanyProfile): stri
 
 export async function generateFoundationBid(
   report: IntelligenceReport,
-  company: CompanyProfile
+  profile: CompanyProfile
 ): Promise<FoundationBid> {
+  // GSTIN and PAN stay in the browser's vault: the bid carries tokens the page fills in at download time.
+  const company = { ...profile, gstin: profile.gstin || GSTIN_TOKEN, panNumber: profile.panNumber || PAN_TOKEN };
   const model = AI_CONFIG.MODEL_NAME;
   const health = await checkLlmHealth(model);
   if (!health.available) {

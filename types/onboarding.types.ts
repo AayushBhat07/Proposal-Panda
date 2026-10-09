@@ -6,8 +6,9 @@
 export interface CompanyProfile {
   legalName: string;
   registrationClass: string;
-  gstin: string;
-  panNumber: string;
+  /** Kept in the encrypted vault now; only profiles saved before the vault existed still carry these. */
+  gstin?: string;
+  panNumber?: string;
   registeredAddress: string;
 }
 
