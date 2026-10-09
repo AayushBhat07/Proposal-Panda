@@ -27,6 +27,20 @@ export interface DraftFacts {
   invitingOffice?: string;
   /** Whether the scope includes a road, so the programme must schedule it */
   hasRoad?: boolean;
+  /** IS code numbers that appear in the tender text or analysis */
+  isCodes?: Set<string>;
+}
+
+const IS_CODE = /\bIS[:\s]*(\d{3,5})(?:\s*\(?\s*(?:Part|Pt\.?)\s*\d+\s*\)?)?(?:\s*:\s*\d{4})?/g;
+
+/** IS code numbers mentioned in a text, e.g. "IS 2185 (Part 3)" -> "2185". */
+export function isCodesIn(text: string): Set<string> {
+  return new Set([...text.matchAll(IS_CODE)].map(m => m[1]));
+}
+
+/** Replaces IS codes the tender never mentions, so a plausible but wrong standard can't slip into the bid. */
+export function redactUnknownStandards(content: string, known: Set<string>): string {
+  return content.replace(IS_CODE, (match, code: string) => (known.has(code) ? match : '[IS code as per tender]'));
 }
 
 /** Lines of the clause summary the compliance statement must carry verbatim. */
@@ -64,6 +78,8 @@ const BUILD_ORDER: Array<[string, RegExp]> = [
   ['masonry', /\baac\b|block ?work|brick ?work|masonry (?:walls?|work)/i],
   ['flooring and finishes', /flooring|tiling|tiles|finish|painting/i],
 ];
+
+const ROAD_WORK = /road|carriageway|pavement|bituminous/i;
 
 /** First month in the programme whose activities match. */
 function firstMonth(plan: Map<number, string>, pattern: RegExp): number | undefined {
@@ -150,12 +166,9 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'waterproofing, flooring and finishes, services fixtures, then testing and handover. Schedule any external ' +
       'road and drainage works in their own months outside the monsoon (June to September), alongside the building ' +
       'work. Output only those lines.',
-    check: (content, { months, hasRoad }) => {
+    check: (content, { months }) => {
       const plan = parseProgramme(content);
       if (plan.size < Math.ceil((months ?? 2) / 2)) return `it plans only ${plan.size} month(s)`;
-      if (hasRoad && firstMonth(plan, /road|carriageway|pavement|bituminous/i) === undefined) {
-        return 'it leaves out the road works';
-      }
       let previous: [string, number] | undefined;
       for (const [trade, pattern] of BUILD_ORDER) {
         const start = firstMonth(plan, pattern);
@@ -165,7 +178,7 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       }
       return undefined;
     },
-    finish: (content, { months }) => renderProgramme(content, months),
+    finish: (content, { months, hasRoad }) => renderProgramme(content, months, hasRoad),
   },
   compliance: {
     id: 'compliance-statement',
@@ -179,7 +192,8 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'For eligibility criteria (similar works, turnover, no-loss, solvency, bid capacity) never assert the bidder ' +
       'meets them: write "Supporting documents enclosed at [Annexure __]; to be confirmed from company records." ' +
       'Never mark a clause as not applicable. Never comment on the estimated cost, budget or price: the price is ' +
-      'quoted only in Cover II. The department, not the bidder, deducts cess and recovers deposits. Address each flagged risk and submission trap factually. Do not comment on clauses the tender does not contain.',
+      'quoted only in Cover II. The department, not the bidder, deducts cess and recovers deposits; never say the ' +
+      'bidder submits or pays a security deposit. Address each flagged risk and submission trap factually. Do not comment on clauses the tender does not contain.',
     needsSource: true,
     check: (content, { clauses }) => {
       const wrong = [...content.matchAll(/Clause\s*(\d+[A-Z]*)\b[^\n]{0,80}?\bdoes not apply/gi)]
@@ -190,7 +204,7 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     finish: (content, { clauses, delayCompensation }) => {
       const lines = keyClauseLines(clauses, delayCompensation);
       return lines.length
-        ? `${content}\n\nKey contract clauses (as stated in the tender; accepted):\n${lines.map(l => `- ${l}`).join('\n')}`
+        ? `${content}\n\nKey contract clauses (from the tender analysis; verify against the NIT):\n${lines.map(l => `- ${l}`).join('\n')}`
         : content;
     },
   },
@@ -199,7 +213,7 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     title: 'Pre-bid Queries and Clarifications',
     cover: 'technical',
     brief:
-      'Numbered pre-bid queries (1., 2., ...) the contractor should raise with the department, and nothing else. ' +
+      'Between 5 and 10 numbered pre-bid queries (1., 2., ...) the contractor should raise with the department, and nothing else. ' +
       'Never ask about anything the tender already states clearly (deadlines, EMD, forms, how security deposit is ' +
       'recovered). Do not repeat a query. Cite a clause number only if the analysis gives that number for the very term you ask about. Focus on ambiguous or ' +
       'onerous conditions: delay compensation and its cap, price variation / escalation, advances, third-party ' +
@@ -207,7 +221,8 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'Never claim the tender lacks something; only ask about what is unclear. ' +
       'Keep each query to one or two sentences.',
     check: content => {
-      if (!/^\s*1[.)]\s/m.test(content)) return 'it has no numbered queries';
+      const count = content.match(/^\s*\d+[.)]\s/gm)?.length ?? 0;
+      if (count < 5) return `it has only ${count} numbered queries`;
       const claim = content.match(/absence of|\black(?:s|ing)? (?:a|any|clear)|not (?:clearly )?(?:mentioned|specified|provided|defined)|does not (?:include|contain|mention|specify|provide)/i);
       return claim ? `it says the tender lacks something ("${claim[0]}")` : undefined;
     },
@@ -262,9 +277,16 @@ export function parseProgramme(draft: string): Map<number, string> {
 }
 
 /** One line per month from Month 1 to the completion month; months the draft skipped are left to plan. */
-export function renderProgramme(draft: string, months: number | undefined): string {
+export function renderProgramme(draft: string, months: number | undefined, hasRoad = false): string {
   const byMonth = parseProgramme(draft);
   const last = months ?? Math.max(0, ...byMonth.keys());
+  // Llama 3 tends to drop the external works; schedule them in the last three months rather than lose them.
+  if (hasRoad && ![...byMonth.values()].some(a => ROAD_WORK.test(a))) {
+    for (let month = Math.max(1, last - 2); month <= last; month++) {
+      const current = byMonth.get(month);
+      byMonth.set(month, `${current ? `${current}; ` : ''}approach road and drainage works (outside monsoon)`);
+    }
+  }
   const lines = Array.from({ length: last }, (_, i) => `Month ${i + 1}: ${byMonth.get(i + 1) ?? '[activities to be planned]'}`);
   return [
     ...lines,
@@ -359,6 +381,9 @@ export async function generateFoundationBid(
     delayCompensation: report.summary.metadata.delayCompensation,
     invitingOffice: report.summary.metadata.invitingOffice,
     hasRoad: /\broad\b/i.test(`${report.summary.technicalScope} ${report.summary.executiveSummary}`),
+    isCodes: isCodesIn(
+      [report.summary.sourceText, report.summary.technicalScope, report.summary.eligibilityAndClauses].join('\n')
+    ),
     nitRef,
     tenderTitle,
     pan: company.panNumber,
@@ -395,7 +420,9 @@ export async function generateFoundationBid(
       content = tidyDraft(response.content);
       problem = findDraftProblem(section, content, facts);
       if (!problem) break;
+      console.warn(`[bid] ${id} draft rejected at temperature ${temperature}: ${problem}\n${content}`);
     }
+    if (!problem) content = redactUnknownStandards(content, facts.isCodes ?? new Set());
     sections.push({
       ...meta,
       source: 'model',
