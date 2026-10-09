@@ -9,16 +9,16 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 import OnboardingLayout from '@/components/onboarding/OnboardingLayout';
 import CompanyInfoForm from '@/components/onboarding/CompanyInfoForm';
-import RoleSelector from '@/components/onboarding/RoleSelector';
 import OnboardingSummary from '@/components/onboarding/OnboardingSummary';
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { companyProfile, selectedRole, isComplete, setCompanyProfile, setSelectedRole, completeOnboarding } =
-    useOnboarding();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const { companyProfile, isComplete, setCompanyProfile, completeOnboarding } = useOnboarding();
+  useAuth(); // loads the signed-in user shown on the review step
+  const [step, setStep] = useState<1 | 2>(1);
 
   // Check if already completed
   useEffect(() => {
@@ -29,21 +29,14 @@ export default function OnboardingPage() {
 
   // Restore step based on saved state
   useEffect(() => {
-    if (companyProfile && !selectedRole) {
+    if (companyProfile) {
       setStep(2);
-    } else if (companyProfile && selectedRole) {
-      setStep(3);
     }
-  }, [companyProfile, selectedRole]);
+  }, [companyProfile]);
 
   const handleCompanyInfoNext = (profile: typeof companyProfile) => {
     setCompanyProfile(profile!);
     setStep(2);
-  };
-
-  const handleRoleNext = (role: typeof selectedRole) => {
-    setSelectedRole(role);
-    setStep(3);
   };
 
   const handleComplete = () => {
@@ -55,9 +48,7 @@ export default function OnboardingPage() {
   };
 
   const handleBack = () => {
-    if (step > 1) {
-      setStep((step - 1) as 1 | 2 | 3);
-    }
+    setStep(1);
   };
 
   return (
@@ -65,13 +56,9 @@ export default function OnboardingPage() {
       {step === 1 && (
         <CompanyInfoForm onNext={handleCompanyInfoNext} initialData={companyProfile} />
       )}
-      {step === 2 && (
-        <RoleSelector onNext={handleRoleNext} onBack={handleBack} initialRole={selectedRole} />
-      )}
-      {step === 3 && companyProfile && selectedRole && (
+      {step === 2 && companyProfile && (
         <OnboardingSummary
           companyProfile={companyProfile}
-          selectedRole={selectedRole}
           onBack={handleBack}
           onComplete={handleComplete}
         />

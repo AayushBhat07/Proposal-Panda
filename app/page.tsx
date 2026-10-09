@@ -9,21 +9,14 @@ import Spinner from '@/components/ui/Spinner';
 export default function Home() {
   const router = useRouter();
   const { isAuthenticated, isLoading } = useAuth();
-  const { isComplete: isOnboardingComplete } = useOnboarding();
-  
+  const { isComplete: isOnboardingComplete, isLoaded } = useOnboarding();
+
   useEffect(() => {
-    if (!isLoading) {
-      // Check onboarding first
-      if (!isOnboardingComplete) {
-        router.push('/onboarding');
-      } else if (isAuthenticated) {
-        router.push('/dashboard');
-      } else {
-        router.push('/login');
-      }
-    }
-  }, [isAuthenticated, isLoading, isOnboardingComplete, router]);
-  
+    if (isLoading || !isLoaded) return;
+    if (!isAuthenticated) router.replace('/login');
+    else router.replace(isOnboardingComplete ? '/dashboard' : '/onboarding');
+  }, [isAuthenticated, isLoading, isLoaded, isOnboardingComplete, router]);
+
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">

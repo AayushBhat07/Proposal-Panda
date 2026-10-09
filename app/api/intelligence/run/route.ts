@@ -7,15 +7,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { requirePermission } from '@/lib/auth/server';
 import { executeIntelligencePipeline } from '@/features/intelligence-orchestrator';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator';
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, 'tender.upload');
+  if (auth instanceof NextResponse) return auth;
+
   let tempFilePath: string | null = null;
 
   try {
     // Parse multipart form data
-    const formData = await request.formData();
+    const formData = await request.formData().catch(() => null);
+    if (!formData) {
+      return NextResponse.json({ error: 'Expected a multipart form upload.' }, { status: 400 });
+    }
     const file = formData.get('file') as File | null;
     const tenderId = formData.get('tenderId') as string | null;
     const tenderTitle = formData.get('tenderTitle') as string | null;

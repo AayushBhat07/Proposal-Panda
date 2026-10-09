@@ -4,9 +4,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/auth/server';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator/types/orchestration.types';
 
 export async function POST(request: NextRequest) {
+  const auth = await requirePermission(request, 'tender.create');
+  if (auth instanceof NextResponse) return auth;
+
   try {
     // Parse the request body
     const body = await request.json();
@@ -36,10 +40,6 @@ Description: ${body.projectDescription}
 Location: ${body.projectLocation || 'Not specified'}`,
         legalHighlights: 'Standard terms and conditions apply as per government tender norms.',
         attentionPoints: 'Review all submission requirements carefully. Ensure timely submission of all required documents.',
-        financials: {
-          estimatedCost: body.estimatedProjectCost || 'Not specified',
-          emdAmount: body.earnestMoneyDeposit || 'Not specified',
-        },
         metadata: {
           tenderId,
           tenderTitle: body.projectName,

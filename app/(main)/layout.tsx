@@ -1,9 +1,8 @@
 'use client';
 
 /**
- * Phase 5B: Main Layout
- * Layout for authenticated pages with sidebar and top bar
- * Enhanced with navigation safety and onboarding checks
+ * Layout for signed-in pages: requires a session (proxy.ts enforces it server-side)
+ * and a completed onboarding.
  */
 
 import { ReactNode, useEffect } from 'react';
@@ -11,22 +10,27 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/dashboard/Sidebar';
 import TopBar from '@/components/dashboard/TopBar';
 import MarketTicker from '@/components/dashboard/MarketTicker';
+import Spinner from '@/components/ui/Spinner';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 
 export default function MainLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { isComplete } = useOnboarding();
+  const { isComplete, isLoaded } = useOnboarding();
+  const { isAuthenticated, isLoading } = useAuth();
 
-  // Navigation safety: redirect to onboarding if not complete
   useEffect(() => {
-    if (!isComplete) {
-      router.push('/onboarding');
-    }
-  }, [isComplete, router]);
+    if (isLoading || !isLoaded) return;
+    if (!isAuthenticated) router.replace('/login');
+    else if (!isComplete) router.replace('/onboarding');
+  }, [isAuthenticated, isLoading, isComplete, isLoaded, router]);
 
-  // Don't render layout if onboarding incomplete
-  if (!isComplete) {
-    return null;
+  if (isLoading || !isLoaded || !isAuthenticated || !isComplete) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <Spinner size="lg" className="text-amber-900" />
+      </div>
+    );
   }
 
   return (

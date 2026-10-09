@@ -46,14 +46,14 @@ export class LlmServiceError extends Error {
  */
 function createTimeoutController(timeoutMs: number): AbortController {
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), timeoutMs);
+  setTimeout(() => controller.abort(), timeoutMs).unref?.();
   return controller;
 }
 
 /**
  * Check if Ollama service is available and model is loaded
  */
-export async function checkLlmHealth(): Promise<LlmHealthCheck> {
+export async function checkLlmHealth(modelName: string = AI_CONFIG.MODEL_NAME): Promise<LlmHealthCheck> {
   try {
     const controller = createTimeoutController(5000); // 5s for health check
     
@@ -71,14 +71,14 @@ export async function checkLlmHealth(): Promise<LlmHealthCheck> {
 
     const data = await response.json();
     const models = data.models || [];
-    const targetModel = models.find((m: any) => 
-      m.name === AI_CONFIG.MODEL_NAME || m.name.startsWith('llama3:8b')
-    );
+    // Ollama reports "llama3" as "llama3:latest"
+    const wanted = modelName.includes(':') ? modelName : `${modelName}:latest`;
+    const targetModel = models.find((m: { name: string }) => m.name === wanted);
 
     if (!targetModel) {
       return {
         available: false,
-        errorMessage: `Model ${AI_CONFIG.MODEL_NAME} not found. Available models: ${models.map((m: any) => m.name).join(', ')}`,
+        errorMessage: `Model ${modelName} not found. Run \`ollama pull ${modelName}\`. Available models: ${models.map((m: any) => m.name).join(', ')}`,
       };
     }
 
@@ -125,7 +125,7 @@ export async function generateWithLlm(
 
     // Prepare Ollama request payload
     const payload = {
-      model: AI_CONFIG.MODEL_NAME,
+      model: request.model ?? AI_CONFIG.MODEL_NAME,
       prompt: fullPrompt,
       stream: false,
       options: {
@@ -133,6 +133,7 @@ export async function generateWithLlm(
         top_p: request.inferenceOptions?.top_p ?? AI_CONFIG.DEFAULT_INFERENCE.top_p,
         repeat_penalty: request.inferenceOptions?.repeat_penalty ?? AI_CONFIG.DEFAULT_INFERENCE.repeat_penalty,
         num_predict: request.inferenceOptions?.max_tokens ?? AI_CONFIG.DEFAULT_INFERENCE.max_tokens,
+        num_ctx: AI_CONFIG.CONTEXT_TOKENS,
       },
     };
 

@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ProposalPanda
 
-## Getting Started
+Contractors upload a government tender (PDF or DOCX), the app analyses it on local models, and then
+drafts a foundation bid from that analysis, also on a local model.
 
-First, run the development server:
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local     # set AUTH_SECRET for production builds
+ollama pull qwen2.5:3b-instruct  # tender analysis
+ollama pull llama3               # bid generation
+npm run dev                      # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+No Ollama available? `npm run mock-ollama` starts a stand-in that returns placeholder text, so you can
+click through the whole flow. Point `OLLAMA_BASE_URL` at it if it isn't on port 11434.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm test` runs the auth/RBAC tests.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Flow
 
-## Learn More
+1. **Sign in** with a demo account (password `password` in development).
+2. **Onboarding**: company profile, used in the bid.
+3. **Dashboard → Upload tender**: `/api/intelligence/run` extracts text (PDF text layer or DOCX),
+   summarises six sections with `OLLAMA_ANALYSIS_MODEL`, then scores compliance and risk with
+   rules over that summary. If Ollama is down, summaries fall back to keyword extracts and the
+   analysis page says so.
+4. **Analysis → Foundation Bid**: `/api/bid/generate` drafts six sections (covering letter, scope,
+   technical approach, work plan, compliance statement, commercial notes) with `OLLAMA_BID_MODEL`.
+   Figures the tender doesn't state are left as `[placeholders]`. Download as Markdown.
 
-To learn more about Next.js, take a look at the following resources:
+## Roles
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Defined once in `lib/auth/rbac.ts`; enforced in `proxy.ts` and in each API route.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Role | Demo account | Upload & analyse | Generate tender | Generate bid | View tenders & bids |
+|---|---|---|---|---|---|
+| Admin | admin@proposalpanda.dev | ✓ | ✓ | ✓ | ✓ |
+| Tender Analyst | analyst@proposalpanda.dev | ✓ | | | ✓ |
+| Bid Writer | writer@proposalpanda.dev | ✓ | ✓ | ✓ | ✓ |
+| Compliance Reviewer | reviewer@proposalpanda.dev | | | | ✓ |
+| Executive | exec@proposalpanda.dev | | | | ✓ |
 
-## Deploy on Vercel
+The role is carried in a signed HttpOnly cookie, so it can't be changed from the browser. Users are a
+demo directory in `lib/auth/users.ts`; swap `findUser()` for a real user store.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Known limits
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Reports and bids are stored in the browser's localStorage, so they aren't shared between users or devices.
+- Scanned PDFs need OCR before upload.
+- The Clauses and BOQ tabs are placeholders.

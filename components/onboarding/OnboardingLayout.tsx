@@ -9,7 +9,7 @@ import { ReactNode } from 'react';
 
 interface OnboardingLayoutProps {
   children: ReactNode;
-  currentStep: 1 | 2 | 3;
+  currentStep: 1 | 2;
 }
 
 export default function OnboardingLayout({ children, currentStep }: OnboardingLayoutProps) {
@@ -36,9 +36,7 @@ export default function OnboardingLayout({ children, currentStep }: OnboardingLa
         <div className="flex items-center justify-center gap-8 mb-12">
           <Step number={1} label="COMPANY" isActive={currentStep === 1} isComplete={currentStep > 1} />
           <StepConnector />
-          <Step number={2} label="ROLE" isActive={currentStep === 2} isComplete={currentStep > 2} />
-          <StepConnector />
-          <Step number={3} label="REVIEW" isActive={currentStep === 3} isComplete={false} />
+          <Step number={2} label="REVIEW" isActive={currentStep === 2} isComplete={false} />
         </div>
 
         {/* Content */}

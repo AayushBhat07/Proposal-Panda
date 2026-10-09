@@ -3,25 +3,14 @@
 import { useEffect } from 'react';
 import { useAuthStore } from '@/state/authStore';
 
-/**
- * Custom hook for authentication
- * Automatically initializes auth on mount
- */
+/** Auth state for components; loads the current session once. */
 export function useAuth() {
-  const { user, isAuthenticated, isLoading, initialize, login, logout, switchRole, refreshUser } = useAuthStore();
-  
+  const store = useAuthStore();
+  const { initialize, isAuthenticated, isLoading } = store;
+
   useEffect(() => {
-    // Initialize auth on mount
-    initialize();
-  }, [initialize]);
-  
-  return {
-    user,
-    isAuthenticated,
-    isLoading,
-    login,
-    logout,
-    switchRole,
-    refreshUser
-  };
+    if (isLoading && !isAuthenticated) initialize();
+  }, [initialize, isAuthenticated, isLoading]);
+
+  return store;
 }

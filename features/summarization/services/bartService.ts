@@ -1,8 +1,12 @@
 /**
- * PHASE 4A: BART Model Service
- * Local BART integration for tender summarization
- * STRICTLY BART ONLY - No generative or reasoning models
+ * PHASE 4A: Tender summarization service
+ * Each summary section is produced by the local analysis model through Ollama
+ * (AI_CONFIG.ANALYSIS_MODEL). If Ollama is unreachable, a keyword-based extractive
+ * fallback runs instead and metadata.modelUsed says so.
  */
+
+import { AI_CONFIG } from '@/lib/config/constants';
+import { checkLlmHealth, generateWithLlmSafe } from '@/features/ai-generation/services/localLlmService';
 
 import type {
   TenderDocumentInput,
@@ -25,12 +29,13 @@ import type {
  * - No scoring
  */
 export class BARTSummarizationService {
-  private model: 'BART-large-cnn' | 'BART-base';
+  private model: string;
+  private useLocalModel = false;
   private maxTokensPerChunk: number;
   private overlapTokens: number;
 
   constructor(options: SummarizationOptions = {}) {
-    this.model = options.model || 'BART-large-cnn';
+    this.model = options.model || AI_CONFIG.ANALYSIS_MODEL;
     this.maxTokensPerChunk = options.maxTokensPerChunk || 1024;
     this.overlapTokens = options.overlapTokens || 100;
   }
@@ -66,22 +71,22 @@ export class BARTSummarizationService {
         throw new Error('Empty input document');
       }
 
-      // Step 2: Generate summaries for each section
-      const [
-        executiveSummary,
-        commercialTerms,
-        datesAndObligations,
-        technicalScope,
-        legalHighlights,
-        attentionPoints,
-      ] = await Promise.all([
-        this.generateExecutiveSummary(chunks),
-        this.generateCommercialTerms(chunks),
-        this.generateDatesAndObligations(chunks),
-        this.generateTechnicalScope(chunks),
-        this.generateLegalHighlights(chunks),
-        this.generateAttentionPoints(chunks),
-      ]);
+      // Step 2: Check the local model once, then generate each section.
+      // Sequential on purpose: a local Ollama serves one request at a time.
+      const health = await checkLlmHealth(this.model);
+      this.useLocalModel = health.available;
+      if (!health.available) {
+        diagnostics.warnings.push(
+          `Local model unavailable (${health.errorMessage}); used extractive fallback summaries`
+        );
+      }
+
+      const executiveSummary = await this.generateExecutiveSummary(chunks);
+      const commercialTerms = await this.generateCommercialTerms(chunks);
+      const datesAndObligations = await this.generateDatesAndObligations(chunks);
+      const technicalScope = await this.generateTechnicalScope(chunks);
+      const legalHighlights = await this.generateLegalHighlights(chunks);
+      const attentionPoints = await this.generateAttentionPoints(chunks);
 
       const processingTimeMs = Date.now() - startTime;
       diagnostics.processingTimeMs = processingTimeMs;
@@ -97,7 +102,7 @@ export class BARTSummarizationService {
           tenderId: input.tenderId,
           tenderTitle: input.tenderTitle,
           generatedAt: new Date(),
-          modelUsed: this.model,
+          modelUsed: this.useLocalModel ? this.model : 'extractive-fallback',
           totalChunks: chunks.length,
           processingTimeMs,
         },
@@ -190,8 +195,7 @@ export class BARTSummarizationService {
       ? relevantChunks.map(c => c.text).join('\n\n')
       : chunks.slice(0, 3).map(c => c.text).join('\n\n');
 
-    // MOCK: In production, this would call local BART model
-    return await this.mockBARTSummarize(
+    return await this.summarize(
       combinedText,
       'Extract: project name, scope of work, executing authority, location, contract value, duration. Be factual and concise.'
     );
@@ -214,7 +218,7 @@ export class BARTSummarizationService {
       ? relevantChunks.map(c => c.text).join('\n\n')
       : chunks.slice(0, 5).map(c => c.text).join('\n\n');
 
-    return await this.mockBARTSummarize(
+    return await this.summarize(
       combinedText,
       'Extract: EMD amount, performance guarantee, completion period, defect liability, tender type. List factually.'
     );
@@ -236,7 +240,7 @@ export class BARTSummarizationService {
       ? relevantChunks.map(c => c.text).join('\n\n')
       : chunks.slice(0, 5).map(c => c.text).join('\n\n');
 
-    return await this.mockBARTSummarize(
+    return await this.summarize(
       combinedText,
       'Extract: submission requirements, bid validity, extension obligations, key dates. Be specific.'
     );
@@ -259,7 +263,7 @@ export class BARTSummarizationService {
       ? relevantChunks.map(c => c.text).join('\n\n')
       : chunks.slice(3, 10).map(c => c.text).join('\n\n');
 
-    return await this.mockBARTSummarize(
+    return await this.summarize(
       combinedText,
       'Extract: nature of works, major work categories (earthwork, concrete, drainage, etc.), execution scope. Describe factually, do not judge.'
     );
@@ -283,7 +287,7 @@ export class BARTSummarizationService {
       ? relevantChunks.map(c => c.text).join('\n\n')
       : chunks.slice(2, 7).map(c => c.text).join('\n\n');
 
-    return await this.mockBARTSummarize(
+    return await this.summarize(
       combinedText,
       'Extract: bond requirements, guarantee obligations, authority hierarchy, jurisdiction references. State what the tender requires.'
     );
@@ -297,23 +301,37 @@ export class BARTSummarizationService {
   private async generateAttentionPoints(chunks: TextChunk[]): Promise<string> {
     const allText = chunks.map(c => c.text).join('\n\n');
 
-    return await this.mockBARTSummarize(
+    return await this.summarize(
       allText,
       'Extract: long execution periods, high security requirements, extensive technical scope, any repeated obligations. FACTUAL ONLY. Use phrasing like "The tender specifies..." or "The contractor is obligated to...". Do NOT use "should" or "may be risky".'
     );
   }
 
   /**
-   * MOCK BART Summarization
-   * In production, this would call local BART model via transformers.js or Python API
-   * 
-   * For Phase 4A implementation, we use rule-based extraction as placeholder
+   * Summarize one section with the local model; fall back to extraction on any failure.
    */
-  private async mockBARTSummarize(text: string, instruction: string): Promise<string> {
-    // Simulate processing delay
-    await new Promise(resolve => setTimeout(resolve, 100));
+  private async summarize(text: string, instruction: string): Promise<string> {
+    if (this.useLocalModel) {
+      const result = await generateWithLlmSafe({
+        model: this.model,
+        systemPrompt:
+          'You summarise Indian public-works tender documents for a contractor. ' +
+          'Only state facts found in the provided text. If something is not in the text, say "Not specified in the tender." ' +
+          'Answer in plain prose or short bullet points, under 150 words, with no preamble.',
+        // ~4 chars per token; leave room in the context window for the prompt and answer.
+        userPrompt: `Task: ${instruction}\n\nTender text:\n${text.slice(0, (AI_CONFIG.CONTEXT_TOKENS - 1024) * 3)}`,
+        inferenceOptions: { temperature: 0.1, max_tokens: 400 },
+      });
+      if (result.success && result.data.content) return result.data.content;
+      console.warn(`[Summarization] Local model call failed, using extractive fallback: ${
+        result.success ? 'empty response' : result.error.message
+      }`);
+    }
+    return this.extractiveSummary(text, instruction);
+  }
 
-    // Rule-based extraction (placeholder for real BART)
+  /** Keyword-based extraction used when the local model is unavailable. */
+  private extractiveSummary(text: string, instruction: string): string {
     const lines = text.split('\n').filter(line => line.trim().length > 0);
     
     // Extract key sentences based on instruction keywords

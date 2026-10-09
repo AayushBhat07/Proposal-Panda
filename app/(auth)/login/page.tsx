@@ -1,16 +1,26 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { FileText } from 'lucide-react';
+import { DEMO_EMAILS } from '@/lib/auth/users';
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, isLoading } = useAuth();
-  const [email, setEmail] = useState('demo@example.com');
+  const [email, setEmail] = useState('writer@proposalpanda.dev');
   const [password, setPassword] = useState('password');
   const [error, setError] = useState('');
   
@@ -20,10 +30,11 @@ export default function LoginPage() {
     
     try {
       await login(email, password);
-      router.push('/dashboard');
+      const next = searchParams.get('next');
+      // Only follow same-site relative paths.
+      router.push(next && next.startsWith('/') && !next.startsWith('//') ? next : '/');
     } catch (err) {
-      setError('Login failed. Please try again.');
-      console.error('Login error:', err);
+      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     }
   };
   
@@ -88,9 +99,18 @@ export default function LoginPage() {
         </form>
         
         <div className="mt-6 p-4 bg-blue-50 rounded-md">
-          <p className="text-sm text-gray-700">
-            <strong>Demo Mode:</strong> Any email/password will work. This is a prototype with mock authentication.
+          <p className="text-sm text-gray-700 mb-2">
+            <strong>Demo accounts</strong> (password <code>password</code> in development):
           </p>
+          <ul className="text-xs text-gray-700 space-y-1">
+            {DEMO_EMAILS.map(demoEmail => (
+              <li key={demoEmail}>
+                <button type="button" className="underline" onClick={() => setEmail(demoEmail)}>
+                  {demoEmail}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       </Card>
     </div>

@@ -2,25 +2,26 @@
 
 /**
  * Phase 5A: Onboarding Summary
- * Step 3 of onboarding - review and confirm
+ * Step 2 of onboarding - review and confirm
  */
 
 import Button from '@/components/ui/Button';
-import type { CompanyProfile, OnboardingState } from '@/types/onboarding.types';
+import type { CompanyProfile } from '@/types/onboarding.types';
+import { useAuthStore } from '@/state/authStore';
+import { ROLE_LABELS } from '@/lib/auth/rbac';
 
 interface OnboardingSummaryProps {
   companyProfile: CompanyProfile;
-  selectedRole: OnboardingState['selectedRole'];
   onBack: () => void;
   onComplete: () => void;
 }
 
 export default function OnboardingSummary({
   companyProfile,
-  selectedRole,
   onBack,
   onComplete,
 }: OnboardingSummaryProps) {
+  const { user } = useAuthStore();
   return (
     <div className="space-y-6">
       <div>
@@ -79,25 +80,18 @@ export default function OnboardingSummary({
       {/* Role Section */}
       <div className="border border-gray-200 rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="font-semibold text-gray-900">Selected Role</h4>
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-sm text-amber-900 hover:text-amber-800"
-          >
-            Edit
-          </button>
+          <h4 className="font-semibold text-gray-900">Your Role</h4>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-sm text-gray-900 font-medium">{selectedRole}</span>
+          <span className="text-sm text-gray-900 font-medium">{user ? ROLE_LABELS[user.role] : '—'}</span>
         </div>
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p className="text-sm text-blue-900">
-          <span className="font-semibold">Note:</span> You can change your role and update company
-          information anytime from the Settings page.
+          <span className="font-semibold">Note:</span> Roles are assigned by your administrator and
+          decide what you can do in the workspace.
         </p>
       </div>
 

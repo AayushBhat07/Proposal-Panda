@@ -6,9 +6,12 @@
  */
 
 import { useOnboarding } from '@/lib/context/OnboardingContext';
+import { useAuthStore } from '@/state/authStore';
+import { ROLE_LABELS } from '@/lib/auth/rbac';
 
 export default function TopBar() {
-  const { companyProfile, selectedRole } = useOnboarding();
+  const { companyProfile } = useOnboarding();
+  const { user } = useAuthStore();
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
@@ -36,9 +39,9 @@ export default function TopBar() {
       {/* Right Side */}
       <div className="flex items-center gap-4">
         {/* Role Badge */}
-        {selectedRole && (
+        {user && (
           <div className="px-3 py-1 bg-amber-900 text-white text-xs font-medium rounded-full">
-            {selectedRole}
+            {ROLE_LABELS[user.role]}
           </div>
         )}
 
@@ -51,8 +54,11 @@ export default function TopBar() {
         </button>
 
         {/* User Avatar */}
-        <div className="w-8 h-8 bg-amber-900 rounded-full flex items-center justify-center text-white text-sm font-medium">
-          R
+        <div
+          className="w-8 h-8 bg-amber-900 rounded-full flex items-center justify-center text-white text-sm font-medium"
+          title={user?.email}
+        >
+          {user?.name.charAt(0) ?? '?'}
         </div>
       </div>
     </header>

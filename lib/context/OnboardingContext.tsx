@@ -9,8 +9,9 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import type { CompanyProfile, OnboardingState } from '@/types/onboarding.types';
 
 interface OnboardingContextValue extends OnboardingState {
+  /** False until localStorage has been read; don't redirect before then. */
+  isLoaded: boolean;
   setCompanyProfile: (profile: CompanyProfile) => void;
-  setSelectedRole: (role: OnboardingState['selectedRole']) => void;
   completeOnboarding: () => void;
 }
 
@@ -19,9 +20,9 @@ const OnboardingContext = createContext<OnboardingContextValue | null>(null);
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<OnboardingState>({
     companyProfile: null,
-    selectedRole: null,
     isComplete: false,
   });
+  const [isLoaded, setIsLoaded] = useState(false);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -33,19 +34,16 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         console.error('Failed to load onboarding state:', error);
       }
     }
+    setIsLoaded(true);
   }, []);
 
   // Persist to localStorage on change
   useEffect(() => {
-    localStorage.setItem('onboardingState', JSON.stringify(state));
-  }, [state]);
+    if (isLoaded) localStorage.setItem('onboardingState', JSON.stringify(state));
+  }, [state, isLoaded]);
 
   const setCompanyProfile = (profile: CompanyProfile) => {
     setState(prev => ({ ...prev, companyProfile: profile }));
-  };
-
-  const setSelectedRole = (role: OnboardingState['selectedRole']) => {
-    setState(prev => ({ ...prev, selectedRole: role }));
   };
 
   const completeOnboarding = () => {
@@ -56,8 +54,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     <OnboardingContext.Provider
       value={{
         ...state,
+        isLoaded,
         setCompanyProfile,
-        setSelectedRole,
         completeOnboarding,
       }}
     >

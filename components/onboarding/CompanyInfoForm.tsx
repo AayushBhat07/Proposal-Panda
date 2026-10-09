@@ -120,7 +120,7 @@ export default function CompanyInfoForm({ onNext, initialData }: CompanyInfoForm
           disabled={!isValid}
           className="bg-amber-900 hover:bg-amber-800 text-white px-6 py-2"
         >
-          Continue to Role Selection
+          Continue to Review
         </Button>
       </div>
     </form>

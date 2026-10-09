@@ -13,6 +13,5 @@ export interface CompanyProfile {
 
 export interface OnboardingState {
   companyProfile: CompanyProfile | null;
-  selectedRole: 'Senior Tender Analyst' | 'Bid Writer' | 'Legal Compliance Officer' | 'Executive' | null;
   isComplete: boolean;
 }

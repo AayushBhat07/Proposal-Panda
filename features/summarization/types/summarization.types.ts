@@ -68,7 +68,8 @@ export interface TenderSummary {
     tenderId: string;
     tenderTitle: string;
     generatedAt: Date;
-    modelUsed: 'BART-large-cnn' | 'BART-base';
+    /** Ollama model tag, or 'extractive-fallback' when no local model was reachable */
+    modelUsed: string;
     totalChunks: number;
     processingTimeMs: number;
   };
@@ -116,7 +117,7 @@ export interface SummarizationOptions {
   /**
    * Model to use (default: BART-large-cnn)
    */
-  model?: 'BART-large-cnn' | 'BART-base';
+  model?: string;
 
   /**
    * Maximum tokens per chunk (default: 1024 for BART)
