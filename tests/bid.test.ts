@@ -200,3 +200,8 @@ test('compliance drops its own lines on quoted terms and quotes the NIT', () => 
   });
   assert.match(out, /quoted from the NIT[^\n]*\n- Price variation \(Clause 10CC\): "Clause 10CC shall not be applicable\."$/);
 });
+
+test('rejects a programme that idles in testing and handover', () => {
+  const draft = 'Months 1-3: Foundations\nMonths 4-9: RCC frame\nMonths 10-12: Flooring and finishes\nMonths 13-15: Testing and handover preparation\nMonths 16-18: Final testing';
+  assert.match(findDraftProblem(MODEL_SECTIONS.programme, draft, facts) ?? '', /testing and handover only/);
+});
