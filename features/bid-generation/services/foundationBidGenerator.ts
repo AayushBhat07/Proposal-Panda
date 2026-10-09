@@ -50,7 +50,7 @@ const QUOTED_TERMS =
 
 /** Pre-bid queries that misquote the tender or ask what it already answers. */
 const BAD_QUERY =
-  /^(?=.*10\s*CC)(?!.*(?:price|escalat|variation))|security deposit.{0,60}recover|recover.{0,60}security deposit|late fee|absence of|\black(?:s|ing)? (?:a|any|clear)|not (?:clearly )?(?:mentioned|specified|provided|defined)|does not (?:include|contain|mention|specify|provide)/i;
+  /^(?=.*10\s*CC)(?!.*(?:price|escalat|variation))|security deposit.{0,60}recover|recover.{0,60}security deposit|late fee|provision for (?:any )?(?:price variation|escalation)|how (?:will|shall|should) the contractor|absence of|\black(?:s|ing)? (?:a|any|clear)|not (?:clearly )?(?:mentioned|specified|provided|defined)|does not (?:include|contain|mention|specify|provide)/i;
 
 const IS_CODE = /\bIS[:\s]*(\d{3,5})(?:\s*\(?\s*(?:Part|Pt\.?)\s*\d+\s*\)?)?(?:\s*:\s*\d{4})?/g;
 
@@ -168,8 +168,9 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'not include: earthwork and foundations; RCC superstructure (concrete grade, steel grade); masonry; flooring ' +
       'and finishes; waterproofing; water supply; sanitary installations; electrical installations; roads; drainage; ' +
       'GRIHA / green-building measures. In each paragraph name only the specifications and standards the tender ' +
-      'text gives for that item (quote them as written, e.g. MoRTH layers and carriageway width for roads, mix design ' +
-      'standard and RMC for concrete), the sequence of work, and the physical or laboratory tests for that item. ' +
+      'text gives for that item, copied as written with their figures (layer names and thicknesses, widths, grades), ' +
+      'the sequence of work, and the physical or laboratory tests that apply to that item. Attach a standard only to ' +
+      'the item the tender text uses it for. ' +
       'Never invent materials or methods the tender does not state, and never expand an abbreviation unless the ' +
       'tender text does. "Earthwork and foundations" means the building foundations, not the road; GSB, WMM, DBM and ' +
       'BC belong only to the road. Give no dimensions, depths or thicknesses unless the tender text states them. ' +
@@ -191,12 +192,16 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'A month-by-month work programme. Write exactly one line per month, from "Month 1:" to "Month {completionMonths}:", ' +
       'each followed by the activities in that month. Follow the build order: mobilisation, foundations, RCC frame ' +
       'floor by floor, masonry, services rough-in, ' +
-      'waterproofing, flooring and finishes, services fixtures, then testing and handover. Schedule any external ' +
+      'waterproofing, flooring and finishes, services fixtures, then testing and handover. Spread the building work ' +
+      'across the whole period, so finishes run into the last third and testing and handover take only the last ' +
+      'month. Schedule any external ' +
       'road and drainage works in their own months outside the monsoon (June to September), alongside the building ' +
       'work. Output only those lines.',
     check: (content, { months }) => {
       const plan = parseProgramme(content);
       if (plan.size < Math.ceil((months ?? 2) / 2)) return `it plans only ${plan.size} month(s)`;
+      const idle = [...plan.values()].filter(a => /^[^;]*\b(?:testing|handover|commissioning)\b[^;]*$/i.test(a) && !/finish|work|install/i.test(a)).length;
+      if (idle > 2) return `it leaves ${idle} months for testing and handover only`;
       let previous: [string, number] | undefined;
       for (const [trade, pattern] of BUILD_ORDER) {
         const start = firstMonth(plan, pattern);
@@ -263,7 +268,7 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
 
 /** Statements a draft must never make: they are eligibility facts only company records can supply. */
 const INVENTED_CLAIMS =
-  /\b(?:our|the) (?:company|firm)\b[^.]{0,40}\b(?:has|have|had) (?:successfully )?(?:completed|executed)|\bturnover\b[^.]{0,80}\bwas (?:Rs|INR|₹)|\b(?:our|its) [^.]{0,30}\bturnover\b[^.]{0,60}\b(?:is|of) (?:Rs|INR|₹)|has not (?:incurred|suffered) (?:any )?loss|(?:have|has|possess) (?:the )?(?:necessary|requisite|adequate) (?:technical |financial )?(?:capabilit|capacit|experience)|we (?:meet|fulfil|fulfill|satisfy) (?:all )?(?:the )?eligibility|\bour (?:technical )?(?:capabilit\w*|experience|expertise|track record)\b|\bideal candidate\b|\bwell[- ]equipped\b|\b(?:has|have|holds?|possess(?:es)?) (?:a |the )?(?:valid )?[^.]{0,30}\b(?:EPF|ESI|ESIC|PF)\b|within the [^.]{0,30}\b(?:budget|estimated cost)\b|\bbid meets all (?:the )?requirements\b|good strength base|well manufactured macadam|chartered accountant[^.]{0,40}\b(?:concrete|test|cube|quality)|(?:concrete|test|cube|quality)[^.]{0,60}chartered accountant/i;
+  /\b(?:our|the) (?:company|firm)\b[^.]{0,40}\b(?:has|have|had) (?:successfully )?(?:completed|executed)|\bturnover\b[^.]{0,80}\bwas (?:Rs|INR|₹)|\b(?:our|its) [^.]{0,30}\bturnover\b[^.]{0,60}\b(?:is|of) (?:Rs|INR|₹)|has not (?:incurred|suffered) (?:any )?loss|(?:have|has|possess) (?:the )?(?:necessary|requisite|adequate) (?:technical |financial )?(?:capabilit|capacit|experience)|we (?:meet|fulfil|fulfill|satisfy) (?:all )?(?:the )?eligibility|\bour (?:technical )?(?:capabilit\w*|experience|expertise|track record)\b|\bideal candidate\b|\bwell[- ]equipped\b|\b(?:has|have|holds?|possess(?:es)?) (?:a |the )?(?:valid )?[^.]{0,30}\b(?:EPF|ESI|ESIC|PF)\b|within the [^.]{0,30}\b(?:budget|estimated cost)\b|\bbid meets all (?:the )?requirements\b|detailed project reports|good strength base|well manufactured macadam|chartered accountant[^.]{0,40}\b(?:concrete|test|cube|quality)|(?:concrete|test|cube|quality)[^.]{0,60}chartered accountant/i;
 
 const PAN_SHAPE = /\b[A-Z]{5}\s?\d{4}\s?[A-Z]\b|\b[A-Z]{4}\s[A-Z]\d{4}[A-Z]\b/g;
 const GSTIN_SHAPE = /\b\d{2}\s?[A-Z]{5}\s?\d{4}[A-Z]\d[A-Z][A-Z\d]\b/g;
