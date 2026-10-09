@@ -134,7 +134,7 @@ export default function FoundationBidPage() {
     link.href = url;
     link.download = `${bid.tenderId}-${file}.docx`;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const handleSaveEdit = () => {
@@ -194,7 +194,7 @@ export default function FoundationBidPage() {
     link.href = url;
     link.download = `${bid.tenderId}-vault-documents.pdf`;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   // Cycles through the highlighted blanks in reading order.

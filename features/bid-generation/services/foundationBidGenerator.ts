@@ -402,7 +402,7 @@ export async function generateFoundationBid(
   profile: CompanyProfile
 ): Promise<FoundationBid> {
   // GSTIN and PAN stay in the browser's vault: the bid carries tokens the page fills in at download time.
-  const company = { ...profile, gstin: profile.gstin || GSTIN_TOKEN, panNumber: profile.panNumber || PAN_TOKEN };
+  const company = { ...profile, gstin: GSTIN_TOKEN, panNumber: PAN_TOKEN };
   const model = AI_CONFIG.MODEL_NAME;
   const health = await checkLlmHealth(model);
   if (!health.available) {

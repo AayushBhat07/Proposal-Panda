@@ -10,7 +10,7 @@ import { LogOut } from 'lucide-react';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { useAuthStore } from '@/state/authStore';
 import { ROLE_LABELS, type Permission } from '@/lib/auth/rbac';
-import { useVaultStore } from '@/lib/vault/vaultStore';
+import { announceLogout, useVaultStore } from '@/lib/vault/vaultStore';
 
 // Only pages that exist; each is shown only to roles that can open it.
 const NAV_ITEMS: Array<{ label: string; href: string; permission?: Permission }> = [
@@ -27,6 +27,7 @@ export default function TopBar() {
 
   const handleLogout = async () => {
     lockVault();
+    announceLogout();
     await logout();
     router.replace('/login');
   };
