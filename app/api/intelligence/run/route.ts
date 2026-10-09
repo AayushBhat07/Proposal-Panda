@@ -5,11 +5,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir, unlink } from 'fs/promises';
-import { join } from 'path';
+import { extname, join } from 'path';
+import { randomUUID } from 'crypto';
 import { tmpdir } from 'os';
 import { requirePermission } from '@/lib/auth/server';
 import { executeIntelligencePipeline } from '@/features/intelligence-orchestrator';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator';
+
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   const auth = await requirePermission(request, 'tender.upload');
@@ -51,13 +54,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json({ error: 'File must be 50MB or smaller.' }, { status: 413 });
+    }
+
     // Create temporary directory if it doesn't exist
     const tempDir = join(tmpdir(), 'tender-uploads');
     await mkdir(tempDir, { recursive: true });
 
     // Save file to temporary location
     const buffer = Buffer.from(await file.arrayBuffer());
-    tempFilePath = join(tempDir, `${tenderId}-${Date.now()}-${file.name}`);
+    // Never build the path from client input (tenderId / file name could contain ../)
+    tempFilePath = join(tempDir, `${randomUUID()}${extname(fileName)}`);
     await writeFile(tempFilePath, buffer);
 
     console.log(`[API] Processing tender: ${tenderTitle} (${tenderId})`);
