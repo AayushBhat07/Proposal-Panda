@@ -109,7 +109,7 @@ export function isCodesIn(text: string): Set<string> {
   return new Set([...text.matchAll(IS_CODE)].map(m => m[1]));
 }
 
-const GRADE = /\b(?:M\s?-?\s?(\d{2})|Fe\s?-?\s?(\d{3})\s?(?:D)?)\b/g;
+const GRADE = /\b(?:M\s?[-‐–]?\s?(\d{2})|Fe\s?[-‐–]?\s?(\d{3})\s?(?:D)?)\b/g;
 
 /** Concrete and steel grades mentioned in a text, e.g. "M25" -> "M25", "Fe 500D" -> "Fe500". */
 export function gradesIn(text: string): Set<string> {
@@ -324,7 +324,8 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     clean: content => dropLines(content, BAD_QUERY),
     check: content => {
       const count = content.match(/^\s*\d+[.)]\s/gm)?.length ?? 0;
-      return count < 5 ? `it has only ${count} usable numbered queries` : undefined;
+      // A small job may only have three or four real questions; withholding those helps nobody.
+      return count < 3 ? `it has only ${count} usable numbered queries` : undefined;
     },
   },
 };
