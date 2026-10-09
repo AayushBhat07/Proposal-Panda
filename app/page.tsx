@@ -20,8 +20,8 @@ export default function Home() {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <Spinner size="lg" className="text-blue-600" />
-        <p className="mt-4 text-gray-600">Loading...</p>
+        <Spinner size="lg" className="text-forest" />
+        <p className="mt-4 text-muted">Loading...</p>
       </div>
     </div>
   );

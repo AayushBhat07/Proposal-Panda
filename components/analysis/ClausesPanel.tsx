@@ -7,10 +7,10 @@
 
 export default function ClausesPanel() {
   return (
-    <div className="p-6">
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Clauses & Legal Analysis</h3>
-        <p className="text-sm text-gray-600">Detailed clause analysis will be displayed here.</p>
+    <div>
+      <div className="border border-rule-strong bg-sheet p-6">
+        <h3 className="font-serif text-xl font-semibold text-ink mb-4">Clauses & Legal Analysis</h3>
+        <p className="text-sm text-muted">Detailed clause analysis will be displayed here.</p>
       </div>
     </div>
   );

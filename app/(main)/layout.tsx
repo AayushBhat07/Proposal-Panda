@@ -7,9 +7,7 @@
 
 import { ReactNode, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/dashboard/Sidebar';
 import TopBar from '@/components/dashboard/TopBar';
-import MarketTicker from '@/components/dashboard/MarketTicker';
 import Spinner from '@/components/ui/Spinner';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -28,23 +26,15 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   if (isLoading || !isLoaded || !isAuthenticated || !isComplete) {
     return (
       <div className="h-screen flex items-center justify-center">
-        <Spinner size="lg" className="text-amber-900" />
+        <Spinner size="lg" className="text-forest" />
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <div className="flex-1 flex flex-col">
-          <TopBar />
-          <main className="flex-1 overflow-auto bg-gray-50">
-            {children}
-          </main>
-        </div>
-      </div>
-      <MarketTicker />
+    <div className="min-h-screen bg-paper">
+      <TopBar />
+      <main>{children}</main>
     </div>
   );
 }

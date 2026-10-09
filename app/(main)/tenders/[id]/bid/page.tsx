@@ -5,7 +5,9 @@
  */
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { Download, Lock } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
@@ -13,9 +15,14 @@ import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
 import type { BidCover, FoundationBid } from '@/features/bid-generation';
 
-const COVERS: Array<{ cover: BidCover; title: string }> = [
-  { cover: 'technical', title: 'Cover I: Technical Bid' },
-  { cover: 'financial', title: 'Cover II: Financial Bid' },
+const COVERS: Array<{ cover: BidCover; label: string; title: string; note?: string }> = [
+  { cover: 'technical', label: 'COVER I', title: 'Technical bid' },
+  {
+    cover: 'financial',
+    label: 'COVER II',
+    title: 'Financial bid',
+    note: 'Opened only for bidders who pass Cover I. Prices are never generated: fill the proforma yourself.',
+  },
 ];
 
 type StoredBid = FoundationBid & { id: string };
@@ -63,8 +70,8 @@ export default function FoundationBidPage() {
     if (!bid) return;
     const markdown = [
       `# Bid: ${bid.tenderTitle} (${bid.tenderId})`,
-      ...COVERS.flatMap(({ cover, title }) => [
-        `# ${title}`,
+      ...COVERS.flatMap(({ cover, label, title }) => [
+        `# ${label}: ${title}`,
         ...bid.sections.filter(s => s.cover === cover).map(s => `## ${s.title}\n\n${s.content}`),
       ]),
     ].join('\n\n');
@@ -78,97 +85,141 @@ export default function FoundationBidPage() {
 
   if (!isLoaded) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <Spinner size="lg" className="text-amber-900" />
+      <div className="py-24">
+        <Spinner size="lg" className="text-forest" />
       </div>
     );
   }
 
   if (!report) {
     return (
-      <div className="p-6 max-w-3xl mx-auto text-center text-gray-600">
-        <p className="mb-4">This tender hasn&apos;t been analysed in this browser yet.</p>
+      <div className="mx-auto max-w-xl px-4 py-24 text-center flex flex-col items-center gap-4">
+        <p className="font-serif text-2xl text-ink">This tender hasn&apos;t been analysed in this browser yet.</p>
         <Button variant="outline" onClick={() => router.push('/dashboard')}>
-          Back to Dashboard
+          Back to the register
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <p className="text-sm text-gray-500">{id}</p>
-          <h1 className="text-2xl font-bold text-gray-900">Foundation Bid</h1>
-          {bid && (
-            <p className="text-xs text-gray-500 mt-1">
-              Drafted by {bid.modelUsed} on {new Date(bid.generatedAt).toLocaleString()}. Review every section before
-              submitting.
-            </p>
-          )}
-        </div>
-        <div className="flex gap-3">
-          <Button variant="outline" onClick={() => router.push(`/tenders/${id}/analysis`)}>
-            Back to Analysis
-          </Button>
+    <div className="mx-auto max-w-6xl px-4 sm:px-8 lg:px-14 pt-8 pb-16 flex flex-col gap-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href={`/tenders/${id}/analysis`}
+          className="inline-flex min-h-11 items-center text-sm text-ink-soft hover:text-ink"
+        >
+          ← Analysis
+        </Link>
+        <div className="flex flex-wrap gap-3">
           {bid && (
             <Button variant="outline" onClick={handleDownload}>
+              <Download className="h-4 w-4" aria-hidden />
               Download (.md)
             </Button>
           )}
           {can('bid.generate') && (
-            <Button
-              onClick={handleGenerate}
-              isLoading={isGenerating}
-              disabled={isGenerating || !companyProfile}
-              className="bg-amber-900 hover:bg-amber-800 focus:ring-amber-900"
-            >
-              {bid ? 'Regenerate' : 'Generate Foundation Bid'}
+            <Button onClick={handleGenerate} isLoading={isGenerating} disabled={isGenerating || !companyProfile}>
+              {bid ? 'Redraft the bid' : 'Draft the foundation bid'}
             </Button>
           )}
         </div>
       </div>
 
+      <div className="flex flex-col gap-3">
+        <span className="font-mono text-xs tracking-widest text-muted">BID FILE · TWO-COVER SYSTEM</span>
+        <h1 className="font-serif text-4xl leading-tight text-ink max-w-4xl">{bid?.tenderTitle ?? id}</h1>
+        {bid && (
+          <p className="text-sm text-muted">
+            Drafted by {bid.modelUsed} on {new Date(bid.generatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}. Review every section
+            before submitting.
+          </p>
+        )}
+      </div>
+
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">{error}</div>
+        <p role="alert" className="border-l-2 border-seal bg-seal-tint px-4 py-3 text-sm text-seal">
+          {error}
+        </p>
       )}
 
       {isGenerating && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-900">
+        <p role="status" className="border-l-2 border-ochre bg-ochre-tint px-4 py-3 text-sm text-ink">
           Drafting each section on the local model. This can take several minutes on CPU.
-        </div>
+        </p>
       )}
 
       {!bid && !isGenerating && (
-        <div className="p-12 text-center bg-white border border-gray-200 rounded-lg text-gray-600">
+        <p className="border border-rule-strong bg-sheet p-10 text-center font-serif text-xl text-ink-soft">
           {can('bid.generate')
-            ? 'No bid yet. Generate a first draft from this tender analysis and your company profile.'
-            : 'No bid has been generated for this tender yet. Ask a Bid Writer or Admin to generate one.'}
-        </div>
+            ? 'No bid yet. Draft one from this analysis and your company profile.'
+            : 'No bid has been drafted for this tender yet. Ask a Bid Writer or Admin to draft one.'}
+        </p>
       )}
 
       {bid && (
-        <div className="space-y-10">
+        <>
+          <div className="grid gap-7 [grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr))] items-start">
+            {COVERS.map(({ cover, label, title, note }) => {
+              const sections = bid.sections.filter(section => section.cover === cover);
+              return (
+                <section key={cover} aria-labelledby={`cover-${cover}`} className="border border-rule-strong bg-sheet">
+                  <div className="flex items-baseline justify-between gap-3 border-b border-rule px-6 pt-5 pb-3.5">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-mono text-xs tracking-widest text-muted">{label}</span>
+                      <h2 id={`cover-${cover}`} className="font-serif text-2xl text-ink">
+                        {title}
+                      </h2>
+                    </div>
+                    <span className="text-sm text-ink-soft">
+                      {sections.length} {sections.length === 1 ? 'section' : 'sections'}
+                    </span>
+                  </div>
+                  {cover === 'financial' && (
+                    <div className="flex items-center gap-4 px-6 pt-5">
+                      <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-seal text-paper" aria-hidden>
+                        <Lock className="h-5 w-5" strokeWidth={1.75} />
+                      </div>
+                      <p className="text-sm leading-relaxed text-ink-soft">{note}</p>
+                    </div>
+                  )}
+                  <ol className="px-6 pt-2 pb-4">
+                    {sections.map((section, index) => (
+                      <li key={section.id} className="flex items-baseline gap-3.5 border-b border-dotted border-rule-strong py-2.5">
+                        <span className="w-6 font-mono text-xs text-muted">{String(index + 1).padStart(2, '0')}</span>
+                        <a href={`#${section.id}`} className="flex-1 text-[15px] text-ink hover:text-forest">
+                          {section.title}
+                        </a>
+                        <span className={`text-xs font-medium ${section.source === 'model' ? 'text-forest' : 'text-muted'}`}>
+                          {section.source === 'model' ? 'Drafted' : 'Proforma'}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              );
+            })}
+          </div>
+
           {COVERS.map(({ cover, title }) => (
-            <div key={cover} className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+            <div key={cover} className="flex flex-col gap-5">
+              <h2 className="border-b border-ink pb-2 font-serif text-2xl text-ink">{title}</h2>
               {bid.sections
                 .filter(section => section.cover === cover)
                 .map(section => (
-                  <section key={section.id} className="bg-white border border-gray-200 rounded-lg p-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-lg font-semibold text-gray-900">{section.title}</h3>
-                      <span className="text-xs text-gray-500">
+                  <section key={section.id} id={section.id} className="scroll-mt-6 border border-rule bg-sheet p-6">
+                    <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className="font-serif text-xl font-semibold text-ink">{section.title}</h3>
+                      <span className="font-mono text-xs text-muted">
                         {section.source === 'model' ? `Drafted by ${bid.modelUsed}` : 'Standard proforma'}
                       </span>
                     </div>
-                    <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{section.content}</div>
+                    <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-ink">{section.content}</div>
                   </section>
                 ))}
             </div>
           ))}
-        </div>
+        </>
       )}
     </div>
   );

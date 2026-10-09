@@ -7,6 +7,7 @@
  */
 
 import { useState, useRef } from 'react';
+import { FileUp } from 'lucide-react';
 import Button from '@/components/ui/Button';
 
 interface TenderUploadProps {
@@ -85,31 +86,22 @@ export default function TenderUpload({ onUpload, disabled = false }: TenderUploa
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={`
-          border-2 border-dashed rounded-lg p-12 text-center transition-colors
+          border border-dashed p-10 text-center transition-colors
           ${
             disabled
-              ? 'border-gray-200 bg-gray-100 cursor-not-allowed opacity-60'
+              ? 'border-rule bg-paper cursor-not-allowed opacity-60'
               : isDragging
-              ? 'border-amber-900 bg-amber-50'
-              : 'border-gray-300 bg-gray-50'
+              ? 'border-forest bg-forest-tint'
+              : 'border-rule-strong bg-sheet'
           }
         `}
       >
         <div className="flex flex-col items-center">
-          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4">
-            <span className="text-3xl">📄</span>
-          </div>
-          <p className={`font-medium mb-2 ${disabled ? 'text-gray-500' : 'text-gray-900'}`}>
-            Drag & drop PWD tender documents
-          </p>
-          <p className="text-sm text-gray-600 mb-4">Supports PDF, DOCX (Max 50MB)</p>
-          <Button
-            type="button"
-            onClick={handleBrowseClick}
-            disabled={disabled}
-            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Browse Files
+          <FileUp className="h-7 w-7 text-muted mb-4" strokeWidth={1.5} aria-hidden />
+          <p className="font-serif text-xl text-ink mb-1">Drop the tender document here</p>
+          <p className="text-sm text-muted mb-5">NIT and tender papers as PDF or DOCX, up to 50 MB</p>
+          <Button type="button" onClick={handleBrowseClick} disabled={disabled}>
+            Choose a file
           </Button>
           <input
             ref={fileInputRef}
@@ -122,9 +114,9 @@ export default function TenderUpload({ onUpload, disabled = false }: TenderUploa
         </div>
       </div>
       {error && (
-        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-          <span className="font-medium">⚠️ Error:</span> {error}
-        </div>
+        <p role="alert" className="mt-3 border-l-2 border-seal bg-seal-tint px-4 py-3 text-sm text-seal">
+          {error}
+        </p>
       )}
     </div>
   );
