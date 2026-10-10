@@ -19,6 +19,7 @@ import type {
 
 // Import Phase 4A
 import { summarizeTenderFromFile } from '../../summarization/services/summarizationOrchestrator';
+import { UnreadableDocumentError } from '../../summarization/services/textExtractor';
 
 // Import Phase 4B
 import { analyzeCompliance } from '../../compliance-scoring/services/complianceScorer';
@@ -157,6 +158,8 @@ export async function executeIntelligencePipeline(
       },
     };
   } catch (error) {
+    // The route shows this one to the user as is.
+    if (error instanceof UnreadableDocumentError) throw error;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     errors.push(`[Pipeline] ${errorMessage}`);
 

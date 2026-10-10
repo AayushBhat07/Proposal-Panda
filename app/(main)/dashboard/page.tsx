@@ -76,16 +76,21 @@ function DashboardContent() {
       clearTimeout(scoringTimer);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.details || data.error || 'Failed to process tender document.');
+        throw new Error(data.error || 'Failed to process tender document.');
       }
       setProcessingStage('finalizing');
 
-      saveToLocalStorage('intelligenceReports', {
+      const saved = saveToLocalStorage('intelligenceReports', {
         id: tenderId,
         fileName: file.name,
         uploadedAt: new Date().toISOString(),
         ...data,
       });
+      if (!saved) {
+        throw new Error(
+          'The analysis finished but could not be saved in this browser. Browser storage may be full or blocked; free some space and try again.'
+        );
+      }
       localStorage.setItem('tender-app-latestTenderId', tenderId);
 
       setUploadState('success');
