@@ -109,8 +109,8 @@ export interface ComplianceScore {
  */
 export interface ComplianceAnalysisOptions {
   /**
-   * Conservative scoring bias (government tenders favor authority)
-   * Default: true
+   * Take 5 more points off every score (government tenders favor authority)
+   * Default: false
    */
   conservativeBias?: boolean;
 
@@ -190,6 +190,8 @@ export interface ComplianceScoringInput {
       completionMonths?: number;
       /** Key contract terms quoted word for word from the tender text */
       keyTerms?: Array<{ label: string; text: string }>;
+      /** Risk-bearing clauses quoted from the tender text */
+      riskClauses?: Array<{ label: string; text: string }>;
     };
   };
 

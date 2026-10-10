@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/state/authStore';
 import AnalysisTabs from '@/components/analysis/AnalysisTabs';
@@ -15,6 +16,7 @@ import CompliancePanel from '@/components/analysis/CompliancePanel';
 import ClausesPanel from '@/components/analysis/ClausesPanel';
 import BOQInsightsPanel from '@/components/analysis/BOQInsightsPanel';
 import MetadataPanel from '@/components/analysis/MetadataPanel';
+import { RISK_CHIP } from '@/components/analysis/risk';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { getFromLocalStorage } from '@/services/storage/mockStorageService';
@@ -86,22 +88,9 @@ export default function TenderAnalysisPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex flex-col h-full">
-        <div className="bg-white border-b border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div className="animate-pulse">
-              <div className="h-8 bg-gray-200 rounded w-48 mb-2"></div>
-              <div className="h-6 bg-gray-200 rounded w-96 mb-1"></div>
-              <div className="h-4 bg-gray-200 rounded w-64"></div>
-            </div>
-          </div>
-        </div>
-        <div className="flex-1 flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <Spinner size="lg" className="text-amber-900 mb-4" />
-            <p className="text-gray-600">Loading analysis...</p>
-          </div>
-        </div>
+      <div className="py-24">
+        <Spinner size="lg" className="text-forest" />
+        <p className="mt-4 text-center text-muted">Loading analysis…</p>
       </div>
     );
   }
@@ -109,33 +98,14 @@ export default function TenderAnalysisPage() {
   // Error state
   if (error) {
     return (
-      <div className="flex flex-col h-full">
-        <div className="bg-white border-b border-gray-200 p-6">
-          <h1 className="text-xl font-semibold text-gray-900">Analysis Error</h1>
-        </div>
-        <div className="flex-1 flex items-center justify-center bg-gray-50">
-          <div className="text-center max-w-md">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">⚠️</span>
-            </div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Unable to Load Analysis</h2>
-            <p className="text-gray-600 mb-6">{error}</p>
-            <div className="flex gap-3 justify-center">
-              <Button 
-                onClick={handleBackToDashboard} 
-                variant="outline"
-                className="border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                Back to Dashboard
-              </Button>
-              <Button 
-                onClick={handleRetry} 
-                className="bg-amber-900 text-white hover:bg-amber-800"
-              >
-                Try Again
-              </Button>
-            </div>
-          </div>
+      <div className="mx-auto max-w-xl px-4 py-24 text-center flex flex-col items-center gap-4">
+        <h1 className="font-serif text-3xl text-ink">This analysis couldn&apos;t be opened</h1>
+        <p className="text-ink-soft">{error}</p>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={handleBackToDashboard}>
+            Back to the register
+          </Button>
+          <Button onClick={handleRetry}>Try again</Button>
         </div>
       </div>
     );
@@ -146,43 +116,33 @@ export default function TenderAnalysisPage() {
     return null;
   }
 
+  const { metadata } = report.summary;
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-2xl font-bold text-gray-900">{params.id}</span>
-              <span className={`px-2 py-1 text-xs font-medium rounded ${
-                report.compliance.riskLevel === 'Low' ? 'bg-green-100 text-green-700' :
-                report.compliance.riskLevel === 'Medium' ? 'bg-orange-100 text-orange-700' :
-                'bg-red-100 text-red-700'
-              }`}>
-                {report.compliance.riskLevel} Risk
-              </span>
-            </div>
-            <h1 className="text-xl font-semibold text-gray-900 mb-1">
-              {report.summary.metadata.tenderTitle}
-            </h1>
-            <p className="text-sm text-gray-600">
-              Compliance Analysis | Last updated: {new Date(report.metadata.generatedAt).toLocaleString()}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {can('bid.view') && (
-              <Button
-                onClick={() => router.push(`/tenders/${params.id}/bid`)}
-                className="bg-amber-900 text-white hover:bg-amber-800 focus:ring-amber-900"
-              >
-                Foundation Bid →
-              </Button>
-            )}
-          </div>
+    <div className="mx-auto max-w-6xl px-4 sm:px-8 lg:px-14 pt-8 pb-16 flex flex-col gap-7">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href="/dashboard" className="inline-flex min-h-11 items-center text-sm text-ink-soft hover:text-ink">
+          ← Register
+        </Link>
+        {can('bid.view') && (
+          <Button onClick={() => router.push(`/tenders/${params.id}/bid`)}>Prepare the bid</Button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <span className="font-mono text-xs tracking-widest text-muted break-all">
+          {(metadata.nitReference || params.id).toUpperCase()}
+        </span>
+        <h1 className="font-serif text-4xl leading-tight text-ink max-w-4xl">{metadata.tenderTitle}</h1>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink-soft">
+          <span className={`px-2.5 py-1 text-xs font-medium ${RISK_CHIP[report.compliance.riskLevel]}`}>
+            {report.compliance.riskLevel} risk · {report.compliance.complianceScore} / 100
+          </span>
+          {metadata.completionMonths && <span>{metadata.completionMonths} months to complete</span>}
+          <span>Analysed {new Date(report.metadata.generatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
         </div>
       </div>
 
-      {/* Tabs and Content */}
       <AnalysisTabs activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === 'summary' && <SummaryPanel summary={report.summary} />}
         {activeTab === 'compliance' && <CompliancePanel compliance={report.compliance} />}
