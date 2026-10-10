@@ -4,73 +4,76 @@
  * Compliance tab: score, per-category risk levels and the findings from compliance scoring.
  */
 
-import type { ComplianceScore, RiskLevel } from '@/features/compliance-scoring/types/compliance.types';
+import type { ComplianceScore } from '@/features/compliance-scoring/types/compliance.types';
+import { RISK_CHIP, RISK_TEXT } from './risk';
 
-const LEVEL_COLORS: Record<RiskLevel, string> = {
-  Low: 'bg-green-50 border-green-200 text-green-700',
-  Medium: 'bg-orange-50 border-orange-200 text-orange-700',
-  High: 'bg-red-50 border-red-200 text-red-700',
-};
-
-const CATEGORIES: Array<{ key: keyof ComplianceScore['riskCategories']; label: string; risk: string }> = [
-  { key: 'financial', label: 'Financial', risk: 'Financial' },
-  { key: 'technical', label: 'Technical', risk: 'Technical' },
-  { key: 'legal', label: 'Legal', risk: 'Legal' },
-  { key: 'submission', label: 'Submission', risk: 'Submission' },
+const CATEGORIES: Array<{ key: keyof ComplianceScore['riskCategories']; label: string }> = [
+  { key: 'financial', label: 'Financial' },
+  { key: 'technical', label: 'Technical' },
+  { key: 'legal', label: 'Legal' },
+  { key: 'submission', label: 'Submission' },
 ];
 
 export default function CompliancePanel({ compliance }: { compliance: ComplianceScore }) {
   return (
-    <div className="p-6 space-y-6">
-      <div className="grid grid-cols-2 gap-6">
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="text-sm text-gray-600 mb-4">COMPLIANCE SCORE</div>
-          <div className="flex items-end gap-2 mb-4">
-            <div className="text-5xl font-bold text-gray-900">{compliance.complianceScore}</div>
-            <div className="text-2xl text-gray-500 mb-2">/ 100</div>
-          </div>
-          <span className={`inline-block px-3 py-1 border text-sm font-medium rounded ${LEVEL_COLORS[compliance.riskLevel]}`}>
-            {compliance.riskLevel} Risk
+    <div className="flex flex-wrap items-start gap-12">
+      <div className="flex min-w-0 flex-[999_1_520px] flex-col gap-10">
+        <FindingsList
+          title="Identified risks"
+          empty="No risks identified."
+          items={compliance.identifiedRisks.map(r => ({ label: r.category, text: r.description, note: r.sourceSection }))}
+        />
+        <FindingsList
+          title="Missing or weak clauses"
+          empty="No missing or weak clauses found."
+          items={compliance.missingOrWeakClauses.map(c => ({ label: 'Clause', text: c.clause, note: c.reason }))}
+        />
+        <FindingsList
+          title="Submission traps"
+          empty="No submission traps found."
+          items={compliance.submissionTraps.map(t => ({ label: 'Trap', text: t }))}
+        />
+      </div>
+
+      <aside className="flex flex-[1_1_300px] flex-col gap-8">
+        <section className="flex flex-col gap-3 border border-rule-strong bg-sheet p-5">
+          <span className="font-serif text-2xl text-ink">
+            {compliance.complianceScore} <span className="text-muted">/ 100</span>
           </span>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="text-sm text-gray-600 mb-4">Confidence Notes</div>
-          <p className="text-sm text-gray-700 leading-relaxed">{compliance.confidenceNotes}</p>
-        </div>
-      </div>
+          <div className="h-2 bg-rule" aria-hidden>
+            <div
+              className={`h-2 ${compliance.riskLevel === 'Low' ? 'bg-forest' : compliance.riskLevel === 'Medium' ? 'bg-ochre' : 'bg-seal'}`}
+              style={{ width: `${compliance.complianceScore}%` }}
+            />
+          </div>
+          <span className={`text-sm font-medium ${RISK_TEXT[compliance.riskLevel]}`}>
+            {compliance.riskLevel} risk overall
+          </span>
+        </section>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-6">Risk Breakdown</h3>
-        <div className="grid grid-cols-4 gap-4">
-          {CATEGORIES.map(({ key, label, risk }) => {
-            const level = compliance.riskCategories[key];
-            const count = compliance.identifiedRisks.filter(r => r.category === risk).length;
-            return (
-              <div key={key} className={`border rounded-lg p-4 ${LEVEL_COLORS[level]}`}>
-                <div className="text-xs font-semibold uppercase mb-2">{label}</div>
-                <div className="text-2xl font-bold mb-1">{count}</div>
-                <div className="text-xs font-medium">{level} risk</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+        <section>
+          <h2 className="mb-1 font-mono text-xs font-medium tracking-widest text-muted">RISK BY AREA</h2>
+          <dl>
+            {CATEGORIES.map(({ key, label }) => {
+              const level = compliance.riskCategories[key];
+              const count = compliance.identifiedRisks.filter(r => r.category === label).length;
+              return (
+                <div key={key} className="flex items-center justify-between gap-3 border-b border-dotted border-rule-strong py-2.5 text-sm">
+                  <dt className="text-ink">
+                    {label} <span className="text-muted">· {count} {count === 1 ? 'finding' : 'findings'}</span>
+                  </dt>
+                  <dd className={`px-2 py-0.5 text-xs font-medium ${RISK_CHIP[level]}`}>{level}</dd>
+                </div>
+              );
+            })}
+          </dl>
+        </section>
 
-      <FindingsList
-        title="Identified Risks"
-        empty="No risks identified."
-        items={compliance.identifiedRisks.map(r => ({ label: r.category, text: r.description, note: r.sourceSection }))}
-      />
-      <FindingsList
-        title="Missing or Weak Clauses"
-        empty="No missing or weak clauses found."
-        items={compliance.missingOrWeakClauses.map(c => ({ label: 'Clause', text: c.clause, note: c.reason }))}
-      />
-      <FindingsList
-        title="Submission Traps"
-        empty="No submission traps found."
-        items={compliance.submissionTraps.map(t => ({ label: 'Trap', text: t }))}
-      />
+        <section>
+          <h2 className="mb-2 font-mono text-xs font-medium tracking-widest text-muted">CONFIDENCE</h2>
+          <p className="text-sm leading-relaxed text-ink-soft">{compliance.confidenceNotes}</p>
+        </section>
+      </aside>
     </div>
   );
 }
@@ -85,23 +88,25 @@ function FindingsList({
   items: Array<{ label: string; text: string; note?: string }>;
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
+    <section>
+      <h2 className="mb-2 font-serif text-xl font-semibold text-ink">
+        {title} <span className="font-normal text-muted">({items.length})</span>
+      </h2>
       {items.length === 0 ? (
-        <p className="text-sm text-gray-500">{empty}</p>
+        <p className="text-sm text-muted">{empty}</p>
       ) : (
-        <ul className="divide-y divide-gray-100">
+        <ol>
           {items.map((item, index) => (
-            <li key={index} className="py-3 flex gap-3 text-sm">
-              <span className="px-2 py-0.5 h-fit rounded bg-gray-100 text-gray-700 text-xs font-medium">{item.label}</span>
-              <div>
-                <div className="text-gray-900">{item.text}</div>
-                {item.note && <div className="text-xs text-gray-500 mt-1">{item.note}</div>}
+            <li key={index} className="flex gap-4 border-b border-dotted border-rule-strong py-3">
+              <span className="w-24 flex-none pt-0.5 font-mono text-xs uppercase text-muted">{item.label}</span>
+              <div className="min-w-0">
+                <p className="text-[15px] text-ink">{item.text}</p>
+                {item.note && <p className="mt-1 text-sm text-muted">{item.note}</p>}
               </div>
             </li>
           ))}
-        </ul>
+        </ol>
       )}
-    </div>
+    </section>
   );
 }

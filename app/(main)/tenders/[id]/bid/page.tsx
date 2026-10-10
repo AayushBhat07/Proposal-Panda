@@ -1,24 +1,56 @@
 'use client';
 
 /**
- * Foundation bid for an analysed tender: generate it with the local model, read it, download it.
+ * Foundation bid for an analysed tender: generate it with the local model, edit it, fill its blanks,
+ * and download each cover as a Word file.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { Download, FileStack, Lock, Paperclip, Pencil } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
 import type { BidCover, FoundationBid } from '@/features/bid-generation';
+import {
+  countBlanks,
+  fillBlank,
+  isRememberable,
+  sharedBlanks,
+  splitBlanks,
+  unwrapLines,
+} from '@/features/bid-generation/services/draftText';
+import { coverToBlob } from '@/features/bid-generation/services/bidDocx';
+import FillBlanksPanel, { type BlankFill } from '@/components/bid/FillBlanksPanel';
+import { useVaultStore } from '@/lib/vault/vaultStore';
+import {
+  GSTIN_TOKEN,
+  PAN_TOKEN,
+  attachFromVault,
+  checklistMatches,
+  hasIdentifierTokens,
+  withIdentifiers,
+} from '@/lib/vault/bidVault';
+import { buildBundle } from '@/lib/vault/bundle';
+import { DOCUMENT_KINDS } from '@/lib/vault/vault';
 
-const COVERS: Array<{ cover: BidCover; title: string }> = [
-  { cover: 'technical', title: 'Cover I: Technical Bid' },
-  { cover: 'financial', title: 'Cover II: Financial Bid' },
+const COVERS: Array<{ cover: BidCover; label: string; title: string; file: string; note?: string }> = [
+  { cover: 'technical', label: 'COVER I', title: 'Technical bid', file: 'cover-1-technical' },
+  {
+    cover: 'financial',
+    label: 'COVER II',
+    title: 'Financial bid',
+    file: 'cover-2-financial',
+    note: 'Opened only for bidders who pass Cover I. Prices are never generated: fill the proforma yourself.',
+  },
 ];
 
 type StoredBid = FoundationBid & { id: string };
+/** Answers to blanks, kept across bids. One record per browser, like the company profile. */
+type BlankAnswers = { id: 'company'; answers: Record<string, string> };
 
 export default function FoundationBidPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,22 +62,40 @@ export default function FoundationBidPage() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [savedAnswers, setSavedAnswers] = useState<Record<string, string>>({});
+  const blankCursor = useRef(-1);
+  const vault = useVaultStore();
+  const { check: checkVault } = vault;
+  const vaultOpen = vault.status === 'unlocked' && can('vault.use');
 
   useEffect(() => {
     setReport(getFromLocalStorage<Record<string, unknown>>('intelligenceReports', id));
     setBid(getFromLocalStorage<StoredBid>('foundationBids', id));
+    setSavedAnswers(getFromLocalStorage<BlankAnswers>('blankAnswers', 'company')?.answers ?? {});
     setIsLoaded(true);
   }, [id]);
 
+  useEffect(() => {
+    checkVault();
+  }, [checkVault]);
+
   const handleGenerate = async () => {
     if (!report) return;
+    if (bid?.sections.some(s => s.editedAt) && !window.confirm('Redrafting replaces the sections you edited. Continue?')) {
+      return;
+    }
     setIsGenerating(true);
     setError(null);
     try {
       const response = await fetch('/api/bid/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report, companyProfile }),
+        // GSTIN and PAN never leave the vault: the bid is drafted with tokens and filled at download.
+        body: JSON.stringify({
+          report,
+          companyProfile: { ...companyProfile, gstin: GSTIN_TOKEN, panNumber: PAN_TOKEN },
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.details || data.error || 'Bid generation failed.');
@@ -59,116 +109,354 @@ export default function FoundationBidPage() {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async (cover: BidCover, file: string) => {
     if (!bid) return;
-    const markdown = [
-      `# Bid: ${bid.tenderTitle} (${bid.tenderId})`,
-      ...COVERS.flatMap(({ cover, title }) => [
-        `# ${title}`,
-        ...bid.sections.filter(s => s.cover === cover).map(s => `## ${s.title}\n\n${s.content}`),
-      ]),
-    ].join('\n\n');
-    const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown' }));
+    const needsIds = bid.sections.some(s => s.cover === cover && hasIdentifierTokens(s.content));
+    if (needsIds && can('vault.use') && !vaultOpen) {
+      setError('Unlock the vault to put your GSTIN and PAN into the Word file.');
+      return;
+    }
+    setError(null);
+    // Real numbers from the unlocked vault; anyone else gets blanks to fill in Word.
+    const ids = vaultOpen ? vault.identifiers : null;
+    const filled = (text: string) =>
+      text
+        .split(GSTIN_TOKEN)
+        .join(ids?.gstin || '[GSTIN]')
+        .split(PAN_TOKEN)
+        .join(ids?.pan || '[PAN]');
+    const forExport = { ...bid, sections: bid.sections.map(s => ({ ...s, content: filled(s.content) })) };
+    if (needsIds && vaultOpen) await vault.session!.log('exported bid', `${bid.tenderTitle}: ${file}`);
+    const metadata = (report?.summary as { metadata?: { nitReference?: string } } | undefined)?.metadata;
+    const blob = await coverToBlob(forExport, cover, metadata?.nitReference ?? '[NIT No.]', companyProfile?.legalName ?? '[Company]');
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${bid.tenderId}-foundation-bid.md`;
+    link.download = `${bid.tenderId}-${file}.docx`;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+
+  const handleSaveEdit = () => {
+    if (!bid || !editing) return;
+    const editedAt = new Date().toISOString();
+    const updated: StoredBid = {
+      ...bid,
+      sections: bid.sections.map(s => (s.id === editing.id ? { ...s, content: editing.text, editedAt } : s)),
+    };
+    saveToLocalStorage('foundationBids', updated);
+    setBid(updated);
+    setEditing(null);
+  };
+
+  const handleFill = (fills: BlankFill[]) => {
+    if (!bid) return;
+    const editedAt = new Date().toISOString();
+    const updated: StoredBid = {
+      ...bid,
+      sections: bid.sections.map(section => {
+        const content = fills.reduce((text, { blank, value }) => fillBlank(text, blank, value), section.content);
+        return content === section.content ? section : { ...section, content, editedAt };
+      }),
+    };
+    saveToLocalStorage('foundationBids', updated);
+    setBid(updated);
+    const remembered = fills.filter(({ blank }) => isRememberable(blank));
+    if (remembered.length) {
+      const answers = { ...savedAnswers, ...Object.fromEntries(remembered.map(f => [f.blank, f.value])) };
+      saveToLocalStorage<BlankAnswers>('blankAnswers', { id: 'company', answers });
+      setSavedAnswers(answers);
+    }
+  };
+
+  const checklist = bid?.sections.find(s => s.id === 'document-checklist');
+
+  const handleAttachFromVault = () => {
+    if (!bid || !checklist) return;
+    const content = attachFromVault(checklist.content, vault.documents);
+    const updated: StoredBid = {
+      ...bid,
+      sections: bid.sections.map(s => (s.id === checklist.id ? { ...s, content, editedAt: new Date().toISOString() } : s)),
+    };
+    saveToLocalStorage('foundationBids', updated);
+    setBid(updated);
+  };
+
+  // One PDF of the vault certificates in checklist order (the order of DOCUMENT_KINDS), built in the browser.
+  const handleBundle = async () => {
+    if (!bid || !vault.session) return;
+    const order = Object.keys(DOCUMENT_KINDS);
+    const ordered = [...vault.documents].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
+    const files = await Promise.all(ordered.map(async d => ({ bytes: await vault.session!.openDocument(d, 'built bundle'), type: d.type })));
+    await vault.session.log('built bundle', `${ordered.length} documents for ${bid.tenderTitle}`);
+    const url = URL.createObjectURL(new Blob([(await buildBundle(files)) as BlobPart], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${bid.tenderId}-vault-documents.pdf`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  // Cycles through the highlighted blanks in reading order.
+  const handleNextBlank = () => {
+    const blanks = document.querySelectorAll<HTMLElement>('mark[data-blank]');
+    if (blanks.length === 0) return;
+    blankCursor.current = (blankCursor.current + 1) % blanks.length;
+    const target = blanks[blankCursor.current];
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.focus({ preventScroll: true });
+  };
+
+  const totalBlanks = bid ? bid.sections.reduce((sum, s) => sum + countBlanks(s.content), 0) : 0;
 
   if (!isLoaded) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <Spinner size="lg" className="text-amber-900" />
+      <div className="py-24">
+        <Spinner size="lg" className="text-forest" />
       </div>
     );
   }
 
   if (!report) {
     return (
-      <div className="p-6 max-w-3xl mx-auto text-center text-gray-600">
-        <p className="mb-4">This tender hasn&apos;t been analysed in this browser yet.</p>
+      <div className="mx-auto max-w-xl px-4 py-24 text-center flex flex-col items-center gap-4">
+        <p className="font-serif text-2xl text-ink">This tender hasn&apos;t been analysed in this browser yet.</p>
         <Button variant="outline" onClick={() => router.push('/dashboard')}>
-          Back to Dashboard
+          Back to the register
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <p className="text-sm text-gray-500">{id}</p>
-          <h1 className="text-2xl font-bold text-gray-900">Foundation Bid</h1>
-          {bid && (
-            <p className="text-xs text-gray-500 mt-1">
-              Drafted by {bid.modelUsed} on {new Date(bid.generatedAt).toLocaleString()}. Review every section before
-              submitting.
-            </p>
-          )}
-        </div>
-        <div className="flex gap-3">
-          <Button variant="outline" onClick={() => router.push(`/tenders/${id}/analysis`)}>
-            Back to Analysis
-          </Button>
-          {bid && (
-            <Button variant="outline" onClick={handleDownload}>
-              Download (.md)
-            </Button>
-          )}
+    <div className="mx-auto max-w-6xl px-4 sm:px-8 lg:px-14 pt-8 pb-16 flex flex-col gap-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href={`/tenders/${id}/analysis`}
+          className="inline-flex min-h-11 items-center text-sm text-ink-soft hover:text-ink"
+        >
+          ← Analysis
+        </Link>
+        <div className="flex flex-wrap gap-3">
+          {bid &&
+            COVERS.map(({ cover, title, file }) => (
+              <Button key={cover} variant="outline" onClick={() => handleDownload(cover, file)}>
+                <Download className="h-4 w-4" aria-hidden />
+                {title} (.docx)
+              </Button>
+            ))}
           {can('bid.generate') && (
-            <Button
-              onClick={handleGenerate}
-              isLoading={isGenerating}
-              disabled={isGenerating || !companyProfile}
-              className="bg-amber-900 hover:bg-amber-800 focus:ring-amber-900"
-            >
-              {bid ? 'Regenerate' : 'Generate Foundation Bid'}
+            <Button onClick={handleGenerate} isLoading={isGenerating} disabled={isGenerating || !companyProfile}>
+              {bid ? 'Redraft the bid' : 'Draft the foundation bid'}
             </Button>
           )}
         </div>
       </div>
 
+      <div className="flex flex-col gap-3">
+        <span className="font-mono text-xs tracking-widest text-muted">BID FILE · TWO-COVER SYSTEM</span>
+        <h1 className="font-serif text-4xl leading-tight text-ink max-w-4xl">{bid?.tenderTitle ?? id}</h1>
+        {bid && (
+          <p className="text-sm text-muted">
+            Drafted by {bid.modelUsed} on {new Date(bid.generatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}. Review every section
+            before submitting.
+          </p>
+        )}
+      </div>
+
+      {bid && (
+        <div
+          role="status"
+          className={`flex flex-wrap items-center justify-between gap-3 border-l-2 px-4 py-3 ${
+            totalBlanks ? 'border-ochre bg-ochre-tint' : 'border-forest bg-forest-tint'
+          }`}
+        >
+          <p className="text-sm text-ink">
+            {totalBlanks
+              ? `${totalBlanks} ${totalBlanks === 1 ? 'blank' : 'blanks'} left to fill, highlighted below. Fill them here or in Word.`
+              : 'No blanks left. Read it through once more, then download both covers.'}
+          </p>
+          {totalBlanks > 0 && (
+            <Button variant="outline" size="sm" onClick={handleNextBlank}>
+              Next blank
+            </Button>
+          )}
+        </div>
+      )}
+
+      {bid && can('bid.generate') && (
+        <FillBlanksPanel
+          blanks={sharedBlanks(bid.sections.map(s => s.content))}
+          saved={savedAnswers}
+          onFill={handleFill}
+        />
+      )}
+
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">{error}</div>
+        <p role="alert" className="border-l-2 border-seal bg-seal-tint px-4 py-3 text-sm text-seal">
+          {error}
+        </p>
       )}
 
       {isGenerating && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-900">
+        <p role="status" className="border-l-2 border-ochre bg-ochre-tint px-4 py-3 text-sm text-ink">
           Drafting each section on the local model. This can take several minutes on CPU.
-        </div>
+        </p>
       )}
 
       {!bid && !isGenerating && (
-        <div className="p-12 text-center bg-white border border-gray-200 rounded-lg text-gray-600">
+        <p className="border border-rule-strong bg-sheet p-10 text-center font-serif text-xl text-ink-soft">
           {can('bid.generate')
-            ? 'No bid yet. Generate a first draft from this tender analysis and your company profile.'
-            : 'No bid has been generated for this tender yet. Ask a Bid Writer or Admin to generate one.'}
-        </div>
+            ? 'No bid yet. Draft one from this analysis and your company profile.'
+            : 'No bid has been drafted for this tender yet. Ask a Bid Writer or Admin to draft one.'}
+        </p>
       )}
 
       {bid && (
-        <div className="space-y-10">
+        <>
+          <div className="grid gap-7 [grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr))] items-start">
+            {COVERS.map(({ cover, label, title, note }) => {
+              const sections = bid.sections.filter(section => section.cover === cover);
+              return (
+                <section key={cover} aria-labelledby={`cover-${cover}`} className="border border-rule-strong bg-sheet">
+                  <div className="flex items-baseline justify-between gap-3 border-b border-rule px-6 pt-5 pb-3.5">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-mono text-xs tracking-widest text-muted">{label}</span>
+                      <h2 id={`cover-${cover}`} className="font-serif text-2xl text-ink">
+                        {title}
+                      </h2>
+                    </div>
+                    <span className="text-sm text-ink-soft">
+                      {sections.length} {sections.length === 1 ? 'section' : 'sections'}
+                    </span>
+                  </div>
+                  {cover === 'financial' && (
+                    <div className="flex items-center gap-4 px-6 pt-5">
+                      <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-seal text-paper" aria-hidden>
+                        <Lock className="h-5 w-5" strokeWidth={1.75} />
+                      </div>
+                      <p className="text-sm leading-relaxed text-ink-soft">{note}</p>
+                    </div>
+                  )}
+                  <ol className="px-6 pt-2 pb-4">
+                    {sections.map((section, index) => {
+                      const blanks = countBlanks(section.content);
+                      return (
+                        <li key={section.id} className="flex items-baseline gap-3.5 border-b border-dotted border-rule-strong py-2.5">
+                          <span className="w-6 font-mono text-xs text-muted">{String(index + 1).padStart(2, '0')}</span>
+                          <a href={`#${section.id}`} className="flex-1 text-[15px] text-ink hover:text-forest">
+                            {section.title}
+                          </a>
+                          <span className={`text-xs font-medium ${blanks ? 'text-ochre' : 'text-forest'}`}>
+                            {blanks ? `${blanks} ${blanks === 1 ? 'blank' : 'blanks'}` : 'Complete'}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              );
+            })}
+          </div>
+
           {COVERS.map(({ cover, title }) => (
-            <div key={cover} className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+            <div key={cover} className="flex flex-col gap-5">
+              <h2 className="border-b border-ink pb-2 font-serif text-2xl text-ink">{title}</h2>
               {bid.sections
                 .filter(section => section.cover === cover)
                 .map(section => (
-                  <section key={section.id} className="bg-white border border-gray-200 rounded-lg p-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-lg font-semibold text-gray-900">{section.title}</h3>
-                      <span className="text-xs text-gray-500">
-                        {section.source === 'model' ? `Drafted by ${bid.modelUsed}` : 'Standard proforma'}
-                      </span>
+                  <section key={section.id} id={section.id} className="scroll-mt-6 border border-rule bg-sheet p-6">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-serif text-xl font-semibold text-ink">{section.title}</h3>
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-xs text-muted">
+                          {section.editedAt
+                            ? 'Edited'
+                            : section.source === 'model'
+                              ? `Drafted by ${bid.modelUsed}`
+                              : 'Standard proforma'}
+                        </span>
+                        {can('bid.generate') && editing?.id !== section.id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditing({ id: section.id, text: section.content })}
+                            aria-label={`Edit ${section.title}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" aria-hidden />
+                            Edit
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{section.content}</div>
+                    {editing?.id === section.id ? (
+                      <div className="flex flex-col gap-3">
+                        <label htmlFor={`edit-${section.id}`} className="sr-only">
+                          {section.title}
+                        </label>
+                        <textarea
+                          id={`edit-${section.id}`}
+                          value={editing.text}
+                          onChange={e => setEditing({ id: section.id, text: e.target.value })}
+                          rows={Math.min(30, Math.max(8, editing.text.split('\n').length + 2))}
+                          className="w-full border border-rule-strong bg-paper p-3 font-mono text-sm leading-relaxed text-ink"
+                        />
+                        <div className="flex gap-3">
+                          <Button size="sm" onClick={handleSaveEdit}>
+                            Save
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditing(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-ink">
+                        {splitBlanks(unwrapLines(withIdentifiers(section.content, vaultOpen ? vault.identifiers : null, false))).map((part, i) =>
+                          part.blank ? (
+                            <mark key={i} data-blank tabIndex={-1} className="bg-ochre-tint px-0.5 text-ochre">
+                              {part.text}
+                            </mark>
+                          ) : (
+                            part.text
+                          )
+                        )}
+                      </div>
+                    )}
+                    {section.id === 'document-checklist' && can('vault.use') && editing?.id !== section.id && (
+                      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-dotted border-rule-strong pt-4">
+                        {vaultOpen ? (
+                          <>
+                            {checklistMatches(section.content, vault.documents).length > 0 && (
+                              <Button size="sm" variant="outline" onClick={handleAttachFromVault}>
+                                <Paperclip className="h-4 w-4" aria-hidden />
+                                Attach {checklistMatches(section.content, vault.documents).length} from the vault
+                              </Button>
+                            )}
+                            {vault.documents.length > 0 && (
+                              <Button size="sm" variant="outline" onClick={handleBundle}>
+                                <FileStack className="h-4 w-4" aria-hidden />
+                                Download vault certificates as one PDF
+                              </Button>
+                            )}
+                            {vault.documents.length === 0 && (
+                              <Link href="/vault" className="text-sm text-forest underline">
+                                Add certificates to the vault
+                              </Link>
+                            )}
+                          </>
+                        ) : (
+                          <Link href="/vault" className="inline-flex items-center gap-2 text-sm text-forest underline">
+                            <Lock className="h-4 w-4" aria-hidden /> Unlock the vault to attach certificates
+                          </Link>
+                        )}
+                      </div>
+                    )}
                   </section>
                 ))}
             </div>
           ))}
-        </div>
+        </>
       )}
     </div>
   );

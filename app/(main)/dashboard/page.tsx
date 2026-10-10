@@ -1,19 +1,20 @@
 'use client';
 
 /**
- * Phase 5B: Dashboard Page
- * Main dashboard with upload, intelligence snapshot, and activity
- * Enhanced with loading, empty, error states, and state persistence
+ * Dashboard: the tender register (every analysed tender, newest first) and the upload that adds to it.
  */
 
 import { Suspense, useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/state/authStore';
-import DashboardCard from '@/components/dashboard/DashboardCard';
 import TenderUpload from '@/components/dashboard/TenderUpload';
 import ProcessingState from '@/components/dashboard/ProcessingState';
+import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { saveToLocalStorage, getFromLocalStorage } from '@/services/storage/mockStorageService';
+import { RISK_TEXT } from '@/components/analysis/risk';
+import type { RiskLevel } from '@/features/compliance-scoring/types/compliance.types';
 
 type UploadState = 'idle' | 'processing' | 'success' | 'error';
 type ProcessingStage = 'analyzing' | 'scoring' | 'finalizing';
@@ -22,8 +23,8 @@ interface StoredReport {
   id: string;
   fileName: string;
   uploadedAt: string;
-  summary?: { metadata?: { tenderTitle?: string } };
-  compliance?: { riskLevel?: string };
+  summary?: { metadata?: { tenderTitle?: string; nitReference?: string } };
+  compliance?: { riskLevel?: RiskLevel; complianceScore?: number };
 }
 
 export default function DashboardPage() {
@@ -38,30 +39,19 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const deniedPath = searchParams.get('denied');
-  const { user, can } = useAuthStore();
+  const { can } = useAuthStore();
   const [reports, setReports] = useState<StoredReport[]>([]);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [processingStage, setProcessingStage] = useState<ProcessingStage>('analyzing');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
-  const [hasActivityData, setHasActivityData] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Load dashboard data from localStorage
   useEffect(() => {
-    const loadDashboardData = async () => {
-      setIsLoadingData(true);
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Check if user has any tender activity
-      const stored = getFromLocalStorage<StoredReport[]>('intelligenceReports');
-      const list = Array.isArray(stored) ? stored : [];
-      setReports(list.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)));
-      setHasActivityData(list.length > 0);
-      
-      setIsLoadingData(false);
-    };
-    loadDashboardData();
+    const stored = getFromLocalStorage<StoredReport[]>('intelligenceReports');
+    const list = Array.isArray(stored) ? stored : [];
+    setReports(list.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)));
+    setIsLoadingData(false);
   }, []);
 
   const handleFileUpload = async (file: File) => {
@@ -71,7 +61,6 @@ function DashboardContent() {
       setProcessingStage('analyzing');
       setErrorMessage(null);
 
-      // Generate unique tender ID
       const tenderId = `TENDER-${Date.now()}`;
       const tenderTitle = file.name.replace(/\.(pdf|docx)$/i, '');
 
@@ -91,29 +80,21 @@ function DashboardContent() {
       }
       setProcessingStage('finalizing');
 
-      const reportWithId = {
+      saveToLocalStorage('intelligenceReports', {
         id: tenderId,
         fileName: file.name,
         uploadedAt: new Date().toISOString(),
         ...data,
-      };
-
-      saveToLocalStorage('intelligenceReports', reportWithId);
-
-      // Store latest tender ID
+      });
       localStorage.setItem('tender-app-latestTenderId', tenderId);
 
       setUploadState('success');
-      
-      // Redirect to analysis view
       router.push(`/tenders/${tenderId}/analysis`);
     } catch (error) {
       console.error('Processing error:', error);
       setUploadState('error');
       setErrorMessage(
-        error instanceof Error 
-          ? error.message 
-          : 'Failed to process tender document. Please try again.'
+        error instanceof Error ? error.message : 'Failed to process tender document. Please try again.'
       );
     }
   };
@@ -124,277 +105,120 @@ function DashboardContent() {
     setErrorMessage(null);
   };
 
+  const countAt = (level: RiskLevel) => reports.filter(r => r.compliance?.riskLevel === level).length;
+  const highRisk = countAt('High');
+  const month = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }).toUpperCase();
+
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Greeting */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Good Morning, {user?.name || 'User'}
+    <div className="mx-auto max-w-6xl px-4 sm:px-8 lg:px-14 pt-10 pb-16 flex flex-col gap-9">
+      <div className="flex flex-col gap-2 max-w-3xl">
+        <span className="font-mono text-xs tracking-widest text-muted">TENDER REGISTER · {month}</span>
+        <h1 className="font-serif text-4xl leading-tight text-ink">
+          {isLoadingData
+            ? 'Loading the register…'
+            : reports.length === 0
+              ? 'The register is empty. Upload a tender to begin.'
+              : `${reports.length} ${reports.length === 1 ? 'tender' : 'tenders'} on the register${
+                  highRisk ? `, ${highRisk} at high risk.` : '.'
+                }`}
         </h1>
-        <p className="text-sm text-gray-600">Here is your intelligence snapshot for today.</p>
-        <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-          <span>📅 Oct 24, 2023</span>
-          <span>📍 Mumbai, MH</span>
-        </div>
       </div>
 
       {deniedPath && (
-        <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+        <p role="alert" className="border-l-2 border-seal bg-seal-tint px-4 py-3 text-sm text-seal">
           Your role can&apos;t open {deniedPath}.
-        </div>
+        </p>
       )}
 
-      {/* Upload Card */}
-      <div className="grid grid-cols-3 gap-6 mb-6">
-        <div className="col-span-2">
-          <DashboardCard title="Upload New Tender" icon="☁️">
-            {!can('tender.upload') && (
-              <p className="text-sm text-gray-600 py-12 text-center">
-                Your role can view analysed tenders but not upload new ones.
-              </p>
-            )}
-            {can('tender.upload') && uploadState === 'idle' && <TenderUpload onUpload={handleFileUpload} />}
-            {uploadState === 'processing' && uploadedFile && (
-              <ProcessingState fileName={uploadedFile.name} stage={processingStage} />
-            )}
-            {uploadState === 'success' && (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-3xl">✓</span>
-                </div>
-                <p className="text-gray-900 font-medium mb-2">Analysis Complete</p>
-                <p className="text-sm text-gray-600">Redirecting to report...</p>
-              </div>
-            )}
-            {uploadState === 'error' && (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-3xl">✕</span>
-                </div>
-                <p className="text-gray-900 font-medium mb-2">Processing Failed</p>
-                <p className="text-sm text-gray-600 mb-4">
-                  {errorMessage || 'Please try again or contact support.'}
-                </p>
-                <button
-                  onClick={handleRetryUpload}
-                  className="px-4 py-2 bg-amber-900 text-white rounded hover:bg-amber-800 transition-colors"
-                >
-                  Try Again
-                </button>
-              </div>
-            )}
-          </DashboardCard>
-        </div>
+      {reports.length > 0 && (
+        <dl className="grid grid-cols-2 sm:grid-cols-4 border-t border-ink border-b border-b-rule">
+          <Stat label="Analysed" value={reports.length} />
+          <Stat label="Low risk" value={countAt('Low')} />
+          <Stat label="Medium risk" value={countAt('Medium')} />
+          <Stat label="High risk" value={highRisk} tone={highRisk ? 'text-seal' : undefined} />
+        </dl>
+      )}
 
-        {/* Intelligence Snapshot */}
-        <DashboardCard title="Intelligence Snapshot">
-          {isLoadingData ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Spinner size="md" className="text-amber-900" />
-              <p className="text-sm text-gray-600 mt-4">Loading insights...</p>
-            </div>
-          ) : hasActivityData ? (
-            <IntelligenceSnapshot />
-          ) : (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">📊</span>
-              </div>
-              <p className="text-sm text-gray-600">No analysis data yet</p>
-              <p className="text-xs text-gray-500 mt-1">Upload your first tender to see insights</p>
-            </div>
-          )}
-        </DashboardCard>
-      </div>
-
-      {/* Recent Tender Activity */}
-      <DashboardCard title="Recent Tender Activity">
-        {isLoadingData ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Spinner size="md" className="text-amber-900" />
-            <p className="text-sm text-gray-600 mt-4">Loading activity...</p>
-          </div>
-        ) : hasActivityData ? (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
-                    <th className="pb-3 font-medium">TENDER ID / NAME</th>
-                    <th className="pb-3 font-medium">FILE</th>
-                    <th className="pb-3 font-medium">DATE UPLOADED</th>
-                    <th className="pb-3 font-medium">RISK</th>
-                    <th className="pb-3 font-medium">ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody className="text-sm">
-                  {reports.map(report => (
-                    <TenderActivityRow
-                      key={report.id}
-                      id={report.id}
-                      name={report.summary?.metadata?.tenderTitle || report.fileName}
-                      division={report.fileName}
-                      date={new Date(report.uploadedAt).toLocaleDateString()}
-                      status={`${report.compliance?.riskLevel ?? 'Unknown'} Risk`}
-                      statusColor={report.compliance?.riskLevel === 'Low' ? 'green' : report.compliance?.riskLevel === 'Medium' ? 'orange' : 'gray'}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">📋</span>
-            </div>
-            <p className="text-sm font-medium text-gray-900 mb-2">No tender activity yet</p>
-            <p className="text-xs text-gray-500">Upload a tender document to get started</p>
+      <section aria-labelledby="upload-heading" className="flex flex-col gap-4">
+        <h2 id="upload-heading" className="font-mono text-xs tracking-widest text-muted">
+          ADD A TENDER
+        </h2>
+        {!can('tender.upload') && (
+          <p className="text-sm text-ink-soft">Your role can read analysed tenders but not upload new ones.</p>
+        )}
+        {can('tender.upload') && uploadState === 'idle' && <TenderUpload onUpload={handleFileUpload} />}
+        {uploadState === 'processing' && uploadedFile && (
+          <ProcessingState fileName={uploadedFile.name} stage={processingStage} />
+        )}
+        {uploadState === 'success' && (
+          <p className="border border-rule-strong bg-sheet p-8 text-center text-ink">
+            Analysis complete. Opening the report…
+          </p>
+        )}
+        {uploadState === 'error' && (
+          <div className="border border-seal/40 bg-seal-tint p-8 flex flex-col items-center gap-3 text-center">
+            <p className="font-serif text-xl text-seal">The tender couldn&apos;t be analysed</p>
+            <p className="text-sm text-ink-soft">{errorMessage || 'Please try again.'}</p>
+            <Button onClick={handleRetryUpload}>Try again</Button>
           </div>
         )}
-      </DashboardCard>
+      </section>
+
+      <section aria-labelledby="register-heading" className="flex flex-col">
+        <h2 id="register-heading" className="sr-only">
+          Analysed tenders
+        </h2>
+        {isLoadingData ? (
+          <Spinner size="md" className="text-forest" />
+        ) : (
+          reports.map(report => <RegisterRow key={report.id} report={report} />)
+        )}
+      </section>
     </div>
   );
 }
 
-interface TenderActivityRowProps {
-  id: string;
-  name: string;
-  division: string;
-  date: string;
-  status: string;
-  statusColor: 'green' | 'orange' | 'gray';
+function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
+  return (
+    <div className="py-4 flex flex-col gap-1">
+      <dt className="text-sm text-muted">{label}</dt>
+      <dd className={`font-serif text-3xl ${tone ?? 'text-ink'}`}>{value}</dd>
+    </div>
+  );
 }
 
-function TenderActivityRow({ id, name, division, date, status, statusColor }: TenderActivityRowProps) {
-  const router = useRouter();
-  const statusColors = {
-    green: 'bg-green-100 text-green-700',
-    orange: 'bg-orange-100 text-orange-700',
-    gray: 'bg-gray-100 text-gray-700',
-  };
-
-  const handleView = () => {
-    router.push(`/tenders/${id}/analysis`);
-  };
+function RegisterRow({ report }: { report: StoredReport }) {
+  const uploaded = new Date(report.uploadedAt);
+  const title = report.summary?.metadata?.tenderTitle || report.fileName;
+  const reference = report.summary?.metadata?.nitReference || report.id;
+  const risk = report.compliance?.riskLevel;
+  const score = report.compliance?.complianceScore;
 
   return (
-    <tr className="border-b border-gray-100">
-      <td className="py-3">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">📄</span>
-          <div>
-            <div className="font-medium text-gray-900">{id}</div>
-            <div className="text-xs text-gray-600">{name}</div>
-          </div>
-        </div>
-      </td>
-      <td className="py-3 text-gray-700">{division}</td>
-      <td className="py-3 text-gray-700">{date}</td>
-      <td className="py-3">
-        <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[statusColor]}`}>
-          {status}
+    <article className="flex flex-wrap items-baseline gap-x-7 gap-y-3 border-b border-rule py-6">
+      <div className="flex w-16 flex-none flex-col">
+        <span className="font-serif text-3xl leading-none">{uploaded.toLocaleDateString('en-IN', { day: '2-digit' })}</span>
+        <span className="mt-1 font-mono text-xs text-muted">
+          {uploaded.toLocaleDateString('en-IN', { month: 'short' }).toUpperCase()}
         </span>
-      </td>
-      <td className="py-3">
-        <button 
-          onClick={handleView}
-          className="text-gray-600 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-900 focus:ring-offset-2 rounded"
-          aria-label={`View tender ${id}`}
+      </div>
+      <div className="flex min-w-0 flex-[999_1_380px] flex-col gap-1.5">
+        <Link
+          href={`/tenders/${report.id}/analysis`}
+          className="font-serif text-xl leading-snug text-ink hover:text-forest"
         >
-          👁️
-        </button>
-      </td>
-    </tr>
+          {title}
+        </Link>
+        <span className="font-mono text-xs text-muted break-all">
+          {reference} · {report.fileName}
+        </span>
+      </div>
+      <div className="flex-[1_1_120px] text-sm text-ink-soft tabular-nums">
+        {score !== undefined ? `${score} / 100 compliance` : 'Not scored'}
+      </div>
+      <div className={`flex-[1_1_120px] text-sm font-medium ${risk ? RISK_TEXT[risk] : 'text-muted'}`}>
+        {risk ? `${risk} risk` : 'Risk unknown'}
+      </div>
+    </article>
   );
 }
-
-// Intelligence Snapshot Component
-function IntelligenceSnapshot() {
-  const [latestReport, setLatestReport] = useState<any>(null);
-
-  useEffect(() => {
-    const reports = getFromLocalStorage<any[]>('intelligenceReports');
-    if (reports && reports.length > 0) {
-      // Get most recent report
-      const sorted = reports.sort((a, b) => 
-        new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
-      );
-      setLatestReport(sorted[0]);
-    }
-  }, []);
-
-  if (!latestReport) return null;
-
-  const complianceScore = latestReport.compliance?.complianceScore || 0;
-  const riskLevel = latestReport.compliance?.riskLevel || 'Unknown';
-  const tenderTitle = latestReport.summary?.metadata?.tenderTitle || latestReport.fileName || 'Untitled Tender';
-  
-  // Calculate circle stroke offset (circumference = 2πr, r=32 → ~201)
-  const circumference = 201;
-  const offset = circumference - (circumference * complianceScore) / 100;
-
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-500';
-    if (score >= 60) return 'text-orange-500';
-    return 'text-red-500';
-  };
-
-  const getScoreLabel = (score: number) => {
-    if (score >= 80) return 'Strong';
-    if (score >= 60) return 'Moderate';
-    return 'Weak';
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="text-center">
-        <div className="text-xs text-gray-500 mb-2">LATEST ANALYSIS</div>
-        <div className="text-sm font-medium text-gray-900 truncate" title={tenderTitle}>
-          {tenderTitle.length > 35 ? `${tenderTitle.substring(0, 35)}...` : tenderTitle}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="text-center">
-          <div className="relative inline-flex items-center justify-center w-20 h-20 mb-2">
-            <svg className="w-20 h-20 transform -rotate-90">
-              <circle
-                cx="40"
-                cy="40"
-                r="32"
-                stroke="currentColor"
-                strokeWidth="8"
-                fill="none"
-                className="text-gray-200"
-              />
-              <circle
-                cx="40"
-                cy="40"
-                r="32"
-                stroke="currentColor"
-                strokeWidth="8"
-                fill="none"
-                strokeDasharray={circumference}
-                strokeDashoffset={offset}
-                className={getScoreColor(complianceScore)}
-              />
-            </svg>
-            <div className="absolute text-xl font-bold text-gray-900">{complianceScore}%</div>
-          </div>
-          <div className="text-xs text-gray-600">Compliance</div>
-          <div className={`text-xs font-medium ${getScoreColor(complianceScore)}`}>
-            {getScoreLabel(complianceScore)}
-          </div>
-        </div>
-        <div className="text-center">
-          <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-2">
-            <span className="text-3xl">⚠️</span>
-          </div>
-          <div className="text-xs text-gray-600">Risk Level</div>
-          <div className="text-xs text-orange-600 font-medium">{riskLevel}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
