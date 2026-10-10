@@ -18,8 +18,3 @@ export type {
 // Export main service
 export { analyzeCompliance } from './services/complianceScorer';
 
-// Export utilities
-export {
-  validateInstructionModel,
-  getRecommendedModel,
-} from './services/instructionModelService';

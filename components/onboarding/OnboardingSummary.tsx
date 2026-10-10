@@ -2,74 +2,63 @@
 
 /**
  * Phase 5A: Onboarding Summary
- * Step 3 of onboarding - review and confirm
+ * Step 2 of onboarding - review and confirm
  */
 
 import Button from '@/components/ui/Button';
-import type { CompanyProfile, OnboardingState } from '@/types/onboarding.types';
+import type { CompanyProfile } from '@/types/onboarding.types';
+import { useAuthStore } from '@/state/authStore';
+import { ROLE_LABELS } from '@/lib/auth/rbac';
 
 interface OnboardingSummaryProps {
   companyProfile: CompanyProfile;
-  selectedRole: OnboardingState['selectedRole'];
   onBack: () => void;
   onComplete: () => void;
 }
 
 export default function OnboardingSummary({
   companyProfile,
-  selectedRole,
   onBack,
   onComplete,
 }: OnboardingSummaryProps) {
+  const { user } = useAuthStore();
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Review Your Profile</h3>
-        <p className="text-sm text-gray-600">
+        <h3 className="text-lg font-semibold text-ink mb-2">Review Your Profile</h3>
+        <p className="text-sm text-muted">
           Please review your information before completing setup.
         </p>
       </div>
 
       {/* Company Profile Section */}
-      <div className="border border-gray-200 rounded-lg p-6">
+      <div className="border border-rule p-6">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="font-semibold text-gray-900">Company Profile</h4>
+          <h4 className="font-semibold text-ink">Company Profile</h4>
           <button
             type="button"
             onClick={onBack}
-            className="text-sm text-amber-900 hover:text-amber-800"
+            className="text-sm text-forest hover:text-forest-dark"
           >
             Edit
           </button>
         </div>
         <dl className="space-y-3">
           <div className="grid grid-cols-3 gap-4">
-            <dt className="text-sm text-gray-600">Legal Name</dt>
-            <dd className="col-span-2 text-sm text-gray-900 font-medium">
+            <dt className="text-sm text-muted">Legal Name</dt>
+            <dd className="col-span-2 text-sm text-ink font-medium">
               {companyProfile.legalName}
             </dd>
           </div>
           <div className="grid grid-cols-3 gap-4">
-            <dt className="text-sm text-gray-600">Registration Class</dt>
-            <dd className="col-span-2 text-sm text-gray-900 font-medium">
+            <dt className="text-sm text-muted">Registration Class</dt>
+            <dd className="col-span-2 text-sm text-ink font-medium">
               {companyProfile.registrationClass}
             </dd>
           </div>
           <div className="grid grid-cols-3 gap-4">
-            <dt className="text-sm text-gray-600">GSTIN</dt>
-            <dd className="col-span-2 text-sm text-gray-900 font-medium">
-              {companyProfile.gstin}
-            </dd>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <dt className="text-sm text-gray-600">PAN Number</dt>
-            <dd className="col-span-2 text-sm text-gray-900 font-medium">
-              {companyProfile.panNumber}
-            </dd>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <dt className="text-sm text-gray-600">Registered Address</dt>
-            <dd className="col-span-2 text-sm text-gray-900">
+            <dt className="text-sm text-muted">Registered Address</dt>
+            <dd className="col-span-2 text-sm text-ink">
               {companyProfile.registeredAddress}
             </dd>
           </div>
@@ -77,27 +66,20 @@ export default function OnboardingSummary({
       </div>
 
       {/* Role Section */}
-      <div className="border border-gray-200 rounded-lg p-6">
+      <div className="border border-rule p-6">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="font-semibold text-gray-900">Selected Role</h4>
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-sm text-amber-900 hover:text-amber-800"
-          >
-            Edit
-          </button>
+          <h4 className="font-semibold text-ink">Your Role</h4>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-sm text-gray-900 font-medium">{selectedRole}</span>
+          <div className="w-2 h-2 rounded-full bg-forest-tint0" />
+          <span className="text-sm text-ink font-medium">{user ? ROLE_LABELS[user.role] : '—'}</span>
         </div>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-900">
-          <span className="font-semibold">Note:</span> You can change your role and update company
-          information anytime from the Settings page.
+      <div className="bg-forest-tint border border-forest/30 p-4">
+        <p className="text-sm text-forest-dark">
+          <span className="font-semibold">Note:</span> Roles are assigned by your administrator and
+          decide what you can do in the workspace.
         </p>
       </div>
 
@@ -106,14 +88,14 @@ export default function OnboardingSummary({
           type="button"
           onClick={onBack}
           variant="outline"
-          className="border-gray-300 text-gray-700"
+          className="border-rule-strong text-ink-soft"
         >
           Back
         </Button>
         <Button
           type="button"
           onClick={onComplete}
-          className="bg-amber-900 hover:bg-amber-800 text-white px-6 py-2"
+          className="bg-forest hover:bg-forest-dark text-paper px-6 py-2"
         >
           Complete Setup
         </Button>

@@ -1,46 +1,47 @@
 'use client';
 
 /**
- * Phase 5B: Main Layout
- * Layout for authenticated pages with sidebar and top bar
- * Enhanced with navigation safety and onboarding checks
+ * Layout for signed-in pages: requires a session (proxy.ts enforces it server-side)
+ * and a completed onboarding.
  */
 
 import { ReactNode, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/dashboard/Sidebar';
 import TopBar from '@/components/dashboard/TopBar';
-import MarketTicker from '@/components/dashboard/MarketTicker';
+import Spinner from '@/components/ui/Spinner';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
+import { useAuth } from '@/features/auth/hooks/useAuth';
+import { scrubStoredBids } from '@/lib/vault/bidVault';
 
 export default function MainLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { isComplete } = useOnboarding();
+  const { isComplete, isLoaded, companyProfile } = useOnboarding();
+  const { isAuthenticated, isLoading } = useAuth();
 
-  // Navigation safety: redirect to onboarding if not complete
+  // Bids saved before the vault existed hold the real GSTIN and PAN; swap them for tokens on every load
+  // until the profile's copy is moved into the vault.
   useEffect(() => {
-    if (!isComplete) {
-      router.push('/onboarding');
-    }
-  }, [isComplete, router]);
+    if (companyProfile) scrubStoredBids(companyProfile);
+  }, [companyProfile]);
 
-  // Don't render layout if onboarding incomplete
-  if (!isComplete) {
-    return null;
+  useEffect(() => {
+    if (isLoading || !isLoaded) return;
+    if (!isAuthenticated) router.replace('/login');
+    else if (!isComplete) router.replace('/onboarding');
+  }, [isAuthenticated, isLoading, isComplete, isLoaded, router]);
+
+  if (isLoading || !isLoaded || !isAuthenticated || !isComplete) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <Spinner size="lg" className="text-forest" />
+      </div>
+    );
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <div className="flex-1 flex flex-col">
-          <TopBar />
-          <main className="flex-1 overflow-auto bg-gray-50">
-            {children}
-          </main>
-        </div>
-      </div>
-      <MarketTicker />
+    <div className="min-h-screen bg-paper">
+      <TopBar />
+      <main>{children}</main>
     </div>
   );
 }

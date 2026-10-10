@@ -1,50 +1,61 @@
 'use client';
 
 /**
- * Phase 5A: Summary Panel
- * Executive summary tab
+ * Summary tab: the sections produced by the analysis pipeline, read as a memo with the
+ * money and dates in the margin.
  */
 
-export default function SummaryPanel({ summary }: { summary: any }) {
+import type { TenderSummary } from '@/features/summarization/types/summarization.types';
+
+type SectionKey = keyof Omit<TenderSummary, 'metadata' | 'sourceText'>;
+
+const MEMO: Array<{ key: SectionKey; title: string }> = [
+  { key: 'executiveSummary', title: 'What they want' },
+  { key: 'technicalScope', title: 'Technical scope' },
+  { key: 'eligibilityAndClauses', title: 'Who can bid, and key clauses' },
+  { key: 'legalHighlights', title: 'Legal highlights' },
+  { key: 'attentionPoints', title: 'Points to watch' },
+];
+
+const MARGIN: Array<{ key: SectionKey; title: string }> = [
+  { key: 'commercialTerms', title: 'MONEY AND TERMS' },
+  { key: 'datesAndObligations', title: 'DATES AND OBLIGATIONS' },
+];
+
+export default function SummaryPanel({ summary }: { summary: TenderSummary }) {
+  const modelUsed = summary.metadata?.modelUsed;
   return (
-    <div className="p-6 space-y-6">
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Executive Summary</h3>
-        <p className="text-gray-700 leading-relaxed">
-          {summary?.executiveSummary || 'The tender is technically viable for your organization based on current machinery and past experience credentials. However, there are significant financial documentation risks regarding the solvency certificate format. The legal framework contains one unusual arbitration clause that requires review. Submission deadlines are tight with physical submission requirements.'}
+    <div className="flex flex-col gap-8">
+      {modelUsed?.includes('extractive') && (
+        <p role="status" className="border-l-2 border-ochre bg-ochre-tint px-4 py-3 text-sm text-ink">
+          Some sections are keyword extracts because the local analysis model didn&apos;t respond. Check that
+          Ollama is running and re-upload for full summaries.
         </p>
-      </div>
-
-      <div className="grid grid-cols-3 gap-6">
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="text-sm text-gray-600 mb-2">Tender ID</div>
-          <div className="text-lg font-semibold text-gray-900">{summary?.tenderId || 'MH-PWD-2024-892'}</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="text-sm text-gray-600 mb-2">Bid Value</div>
-          <div className="text-lg font-semibold text-gray-900">{summary?.bidValue || '₹24.5 Cr'}</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="text-sm text-gray-600 mb-2">Submission Date</div>
-          <div className="text-lg font-semibold text-gray-900">{summary?.submissionDate || 'Nov 15, 2024'}</div>
-        </div>
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h4 className="text-sm font-semibold text-gray-900 mb-4">Key Requirements</h4>
-        <ul className="space-y-2">
-          {(summary?.keyRequirements || [
-            'Class I-A PWD registration mandatory',
-            'Minimum 3 similar projects in last 5 years',
-            'Turnover: ₹75Cr+ in FY 2022-23',
-            'EMD: ₹49 lakhs (2% of estimated cost)',
-          ]).map((req: string, idx: number) => (
-            <li key={idx} className="flex items-start gap-2 text-sm text-gray-700">
-              <span className="text-green-600 mt-0.5">✓</span>
-              <span>{req}</span>
-            </li>
+      )}
+      <div className="flex flex-wrap items-start gap-12">
+        <article className="flex min-w-0 max-w-[680px] flex-[999_1_520px] flex-col gap-7">
+          {MEMO.map(({ key, title }) => (
+            <section key={key}>
+              <h2 className="mb-2 font-serif text-xl font-semibold text-ink">{title}</h2>
+              <p className="whitespace-pre-wrap font-serif text-lg leading-relaxed text-ink">
+                {summary[key] || 'Not specified in the tender.'}
+              </p>
+            </section>
           ))}
-        </ul>
+          {modelUsed && <p className="text-sm text-muted">Summarised by {modelUsed}</p>}
+        </article>
+        <aside className="flex flex-[1_1_300px] flex-col gap-8">
+          {MARGIN.map(({ key, title }) => (
+            <section key={key}>
+              <h2 className="mb-2 border-b border-dotted border-rule-strong pb-2 font-mono text-xs font-medium tracking-widest text-muted">
+                {title}
+              </h2>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">
+                {summary[key] || 'Not specified in the tender.'}
+              </p>
+            </section>
+          ))}
+        </aside>
       </div>
     </div>
   );
