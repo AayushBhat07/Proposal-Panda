@@ -4,3 +4,4 @@ Phase: Round 2 (user answers applied): roles trimmed, Generate Tender removed, L
 - [x] Upload → /api/intelligence/run, PDF extraction, Ollama summaries
 - [x] Foundation bid generation
 - [x] Verification with stub Ollama (see reviews/2026-10-09-qa-report.md)
+- [x] #16 remaining findings (11, 13, 19, 20) fixed on fix/audit-remaining-findings
