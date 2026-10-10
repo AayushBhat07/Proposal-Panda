@@ -104,7 +104,8 @@ export async function extractTextFromDocx(filePath: string): Promise<string> {
       const result = await mammoth.extractRawText({ buffer });
       const extractedText = result.value;
       
-      if (meaningfulChars(extractedText) < MIN_TEXT_CHARS) {
+      // A short notice or corrigendum is still a valid tender document; only an empty one is not.
+      if (meaningfulChars(extractedText) === 0) {
         throw new UnreadableDocumentError('No readable text found in the .docx. Check that it is the tender document and not empty.');
       }
       console.log(`✓ Extracted ${extractedText.length} characters from .docx`);
