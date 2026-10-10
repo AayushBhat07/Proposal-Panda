@@ -57,18 +57,6 @@ export default function OnboardingSummary({
             </dd>
           </div>
           <div className="grid grid-cols-3 gap-4">
-            <dt className="text-sm text-muted">GSTIN</dt>
-            <dd className="col-span-2 text-sm text-ink font-medium">
-              {companyProfile.gstin}
-            </dd>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <dt className="text-sm text-muted">PAN Number</dt>
-            <dd className="col-span-2 text-sm text-ink font-medium">
-              {companyProfile.panNumber}
-            </dd>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
             <dt className="text-sm text-muted">Registered Address</dt>
             <dd className="col-span-2 text-sm text-ink">
               {companyProfile.registeredAddress}

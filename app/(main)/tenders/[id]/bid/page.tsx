@@ -8,15 +8,34 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Download, Lock, Pencil } from 'lucide-react';
+import { Download, FileStack, Lock, Paperclip, Pencil } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
 import type { BidCover, FoundationBid } from '@/features/bid-generation';
-import { countBlanks, splitBlanks, unwrapLines } from '@/features/bid-generation/services/draftText';
+import {
+  countBlanks,
+  fillBlank,
+  isRememberable,
+  sharedBlanks,
+  splitBlanks,
+  unwrapLines,
+} from '@/features/bid-generation/services/draftText';
 import { coverToBlob } from '@/features/bid-generation/services/bidDocx';
+import FillBlanksPanel, { type BlankFill } from '@/components/bid/FillBlanksPanel';
+import { useVaultStore } from '@/lib/vault/vaultStore';
+import {
+  GSTIN_TOKEN,
+  PAN_TOKEN,
+  attachFromVault,
+  checklistMatches,
+  hasIdentifierTokens,
+  withIdentifiers,
+} from '@/lib/vault/bidVault';
+import { buildBundle } from '@/lib/vault/bundle';
+import { DOCUMENT_KINDS } from '@/lib/vault/vault';
 
 const COVERS: Array<{ cover: BidCover; label: string; title: string; file: string; note?: string }> = [
   { cover: 'technical', label: 'COVER I', title: 'Technical bid', file: 'cover-1-technical' },
@@ -30,6 +49,8 @@ const COVERS: Array<{ cover: BidCover; label: string; title: string; file: strin
 ];
 
 type StoredBid = FoundationBid & { id: string };
+/** Answers to blanks, kept across bids. One record per browser, like the company profile. */
+type BlankAnswers = { id: 'company'; answers: Record<string, string> };
 
 export default function FoundationBidPage() {
   const { id } = useParams<{ id: string }>();
@@ -42,13 +63,22 @@ export default function FoundationBidPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [savedAnswers, setSavedAnswers] = useState<Record<string, string>>({});
   const blankCursor = useRef(-1);
+  const vault = useVaultStore();
+  const { check: checkVault } = vault;
+  const vaultOpen = vault.status === 'unlocked' && can('vault.use');
 
   useEffect(() => {
     setReport(getFromLocalStorage<Record<string, unknown>>('intelligenceReports', id));
     setBid(getFromLocalStorage<StoredBid>('foundationBids', id));
+    setSavedAnswers(getFromLocalStorage<BlankAnswers>('blankAnswers', 'company')?.answers ?? {});
     setIsLoaded(true);
   }, [id]);
+
+  useEffect(() => {
+    checkVault();
+  }, [checkVault]);
 
   const handleGenerate = async () => {
     if (!report) return;
@@ -61,7 +91,11 @@ export default function FoundationBidPage() {
       const response = await fetch('/api/bid/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ report, companyProfile }),
+        // GSTIN and PAN never leave the vault: the bid is drafted with tokens and filled at download.
+        body: JSON.stringify({
+          report,
+          companyProfile: { ...companyProfile, gstin: GSTIN_TOKEN, panNumber: PAN_TOKEN },
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.details || data.error || 'Bid generation failed.');
@@ -77,14 +111,30 @@ export default function FoundationBidPage() {
 
   const handleDownload = async (cover: BidCover, file: string) => {
     if (!bid) return;
+    const needsIds = bid.sections.some(s => s.cover === cover && hasIdentifierTokens(s.content));
+    if (needsIds && can('vault.use') && !vaultOpen) {
+      setError('Unlock the vault to put your GSTIN and PAN into the Word file.');
+      return;
+    }
+    setError(null);
+    // Real numbers from the unlocked vault; anyone else gets blanks to fill in Word.
+    const ids = vaultOpen ? vault.identifiers : null;
+    const filled = (text: string) =>
+      text
+        .split(GSTIN_TOKEN)
+        .join(ids?.gstin || '[GSTIN]')
+        .split(PAN_TOKEN)
+        .join(ids?.pan || '[PAN]');
+    const forExport = { ...bid, sections: bid.sections.map(s => ({ ...s, content: filled(s.content) })) };
+    if (needsIds && vaultOpen) await vault.session!.log('exported bid', `${bid.tenderTitle}: ${file}`);
     const metadata = (report?.summary as { metadata?: { nitReference?: string } } | undefined)?.metadata;
-    const blob = await coverToBlob(bid, cover, metadata?.nitReference ?? '[NIT No.]', companyProfile?.legalName ?? '[Company]');
+    const blob = await coverToBlob(forExport, cover, metadata?.nitReference ?? '[NIT No.]', companyProfile?.legalName ?? '[Company]');
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = `${bid.tenderId}-${file}.docx`;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const handleSaveEdit = () => {
@@ -97,6 +147,54 @@ export default function FoundationBidPage() {
     saveToLocalStorage('foundationBids', updated);
     setBid(updated);
     setEditing(null);
+  };
+
+  const handleFill = (fills: BlankFill[]) => {
+    if (!bid) return;
+    const editedAt = new Date().toISOString();
+    const updated: StoredBid = {
+      ...bid,
+      sections: bid.sections.map(section => {
+        const content = fills.reduce((text, { blank, value }) => fillBlank(text, blank, value), section.content);
+        return content === section.content ? section : { ...section, content, editedAt };
+      }),
+    };
+    saveToLocalStorage('foundationBids', updated);
+    setBid(updated);
+    const remembered = fills.filter(({ blank }) => isRememberable(blank));
+    if (remembered.length) {
+      const answers = { ...savedAnswers, ...Object.fromEntries(remembered.map(f => [f.blank, f.value])) };
+      saveToLocalStorage<BlankAnswers>('blankAnswers', { id: 'company', answers });
+      setSavedAnswers(answers);
+    }
+  };
+
+  const checklist = bid?.sections.find(s => s.id === 'document-checklist');
+
+  const handleAttachFromVault = () => {
+    if (!bid || !checklist) return;
+    const content = attachFromVault(checklist.content, vault.documents);
+    const updated: StoredBid = {
+      ...bid,
+      sections: bid.sections.map(s => (s.id === checklist.id ? { ...s, content, editedAt: new Date().toISOString() } : s)),
+    };
+    saveToLocalStorage('foundationBids', updated);
+    setBid(updated);
+  };
+
+  // One PDF of the vault certificates in checklist order (the order of DOCUMENT_KINDS), built in the browser.
+  const handleBundle = async () => {
+    if (!bid || !vault.session) return;
+    const order = Object.keys(DOCUMENT_KINDS);
+    const ordered = [...vault.documents].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
+    const files = await Promise.all(ordered.map(async d => ({ bytes: await vault.session!.openDocument(d, 'built bundle'), type: d.type })));
+    await vault.session.log('built bundle', `${ordered.length} documents for ${bid.tenderTitle}`);
+    const url = URL.createObjectURL(new Blob([(await buildBundle(files)) as BlobPart], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${bid.tenderId}-vault-documents.pdf`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   // Cycles through the highlighted blanks in reading order.
@@ -184,6 +282,14 @@ export default function FoundationBidPage() {
             </Button>
           )}
         </div>
+      )}
+
+      {bid && can('bid.generate') && (
+        <FillBlanksPanel
+          blanks={sharedBlanks(bid.sections.map(s => s.content))}
+          saved={savedAnswers}
+          onFill={handleFill}
+        />
       )}
 
       {error && (
@@ -306,7 +412,7 @@ export default function FoundationBidPage() {
                       </div>
                     ) : (
                       <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-ink">
-                        {splitBlanks(unwrapLines(section.content)).map((part, i) =>
+                        {splitBlanks(unwrapLines(withIdentifiers(section.content, vaultOpen ? vault.identifiers : null, false))).map((part, i) =>
                           part.blank ? (
                             <mark key={i} data-blank tabIndex={-1} className="bg-ochre-tint px-0.5 text-ochre">
                               {part.text}
@@ -314,6 +420,35 @@ export default function FoundationBidPage() {
                           ) : (
                             part.text
                           )
+                        )}
+                      </div>
+                    )}
+                    {section.id === 'document-checklist' && can('vault.use') && editing?.id !== section.id && (
+                      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-dotted border-rule-strong pt-4">
+                        {vaultOpen ? (
+                          <>
+                            {checklistMatches(section.content, vault.documents).length > 0 && (
+                              <Button size="sm" variant="outline" onClick={handleAttachFromVault}>
+                                <Paperclip className="h-4 w-4" aria-hidden />
+                                Attach {checklistMatches(section.content, vault.documents).length} from the vault
+                              </Button>
+                            )}
+                            {vault.documents.length > 0 && (
+                              <Button size="sm" variant="outline" onClick={handleBundle}>
+                                <FileStack className="h-4 w-4" aria-hidden />
+                                Download vault certificates as one PDF
+                              </Button>
+                            )}
+                            {vault.documents.length === 0 && (
+                              <Link href="/vault" className="text-sm text-forest underline">
+                                Add certificates to the vault
+                              </Link>
+                            )}
+                          </>
+                        ) : (
+                          <Link href="/vault" className="inline-flex items-center gap-2 text-sm text-forest underline">
+                            <Lock className="h-4 w-4" aria-hidden /> Unlock the vault to attach certificates
+                          </Link>
                         )}
                       </div>
                     )}

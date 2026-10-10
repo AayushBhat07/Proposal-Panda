@@ -18,68 +18,174 @@ import type {
 /** How much raw tender text the report keeps for bid drafting (~2.5k tokens; Llama 3 has an 8k context). */
 const SOURCE_TEXT_CHARS = 10000;
 
-/** Finds the NIT / tender reference, e.g. "NIT No. 14/EE/PCD-II/2026-27". */
+/*
+ * Deterministic tender facts. Real tenders print these as "Label : value" rows, in two-column tables where the value
+ * sits on the next line, or as sentences that wrap across PDF lines, so each finder looks at the label's line and
+ * the line or two after it. A finder returns undefined rather than guess: the bid then shows a placeholder.
+ */
+
+/** Value of the first label match, searched in the rest of that line and then the next `lookahead` lines. */
+function labelledValue(
+  text: string,
+  label: RegExp,
+  value: (s: string) => string | undefined,
+  { lookahead = 2, skip }: { lookahead?: number; skip?: (before: string, line: string) => boolean } = {}
+): string | undefined {
+  const lines = text.split('\n');
+  const global = new RegExp(label.source, label.flags.includes('g') ? label.flags : `${label.flags}g`);
+  for (let i = 0; i < lines.length; i++) {
+    for (const match of lines[i].matchAll(global)) {
+      const before = lines[i].slice(0, match.index);
+      if (skip?.(before, lines[i])) continue;
+      const rest = lines[i].slice(match.index! + match[0].length);
+      // Only a label that ends its line ("Earnest Money Deposit (EMD)" in a two-column table) has its value below.
+      const endsLine = (rest.match(/\p{L}/gu) ?? []).length <= 12;
+      const found =
+        value(rest) ??
+        (endsLine
+          ? lines.slice(i + 1, i + 1 + lookahead).reduce<string | undefined>((hit, next) => hit ?? value(next), undefined)
+          : undefined);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+const NIT_LABELS: RegExp[] = [
+  /\b(?:N\.?\s?I\.?\s?T\.?|NIeT|Notice Inviting (?:e-?)?Tenders?)\)?\s*(?:No|Number|Ref(?:erence)?)\b\.?/i,
+  /\b(?:e-?\s?)?Tender Notice\s*(?:No|Number)\b\.?/i,
+  /\b(?:e-?\s?)?Tender\s*(?:ID|No|Number|Ref(?:erence)?|Document No)\b\.?/i,
+  /\b(?:Bid|RFP|Enquiry)\s*(?:No|Number|Ref(?:erence)?)\b\.?/i,
+  /^\s*(?:Ref\.?\s*)?No\.(?=\s*[A-Z0-9]+\/)/i,
+];
+
+function nitValue(rest: string): string | undefined {
+  // Labels like "Bid Number/बोली क्रमांक :" carry a translation before the colon.
+  const value = rest
+    .replace(/^[^:\-–A-Z0-9]*?[:\-–]\s*/i, '')
+    .replace(/^\s*[:\-–.]\s*/, '')
+    .split(/\s*(?:,|\s)\s*(?:dated|dt\.?|date)\b|\s{3,}|\s+F\.\s?No\b|\s+(?:for|regarding|under|is|has|are|was)\s|\s+\(/i)[0]
+    .trim()
+    .replace(/[.,;:)\s]+$/, '');
+  if (!/\d/.test(value) || value.length < 3 || value.length > 80) return undefined;
+  if (/^\d{1,4}$/.test(value) || /^(?:of|for|and|the|in)\b/i.test(value)) return undefined;
+  if (!/[\/\-_]|[A-Z].*\d|\d.*[A-Z]/i.test(value)) return undefined;
+  return value;
+}
+
+/** Finds the NIT / tender reference, e.g. "NIT No. 14/EE/PCD-II/2026-27" or "Bid Number: GEM/2024/B/4869384". */
 export function findNitReference(text: string): string | undefined {
-  const match = text.match(
-    /\b(?:N\.?I\.?T\.?|(?:e-)?Tender|Bid)\)?\s*(?:No|Number|Ref(?:erence)?)\.?\s*[:\-–]?\s*([A-Z0-9][A-Z0-9/\-.()]*\d[A-Z0-9/\-.()]*)/i
-  );
-  return match?.[1].replace(/[.)]+$/, '');
+  for (const label of NIT_LABELS) {
+    const found = labelledValue(text, label, nitValue, { lookahead: 1 });
+    if (found) return found;
+  }
+  return undefined;
 }
 
-/** Finds the completion period in months, e.g. "Period of completion: 18 (Eighteen) months". */
+const PERIOD_LABEL =
+  /(?:period of completion|completion period|time allowed(?: for (?:carrying out|completion)[a-z ]*)?|time of completion|duration of (?:the )?(?:contract|work)|contract (?:period|duration)|period of (?:the )?contract|stipulated (?:period|time)(?: of completion)?|to be completed (?:with)?in)/i;
+const PERIOD_VALUE =
+  /^[^0-9\n]{0,40}?\(?\s*(\d{1,3})\s*\)?\s*(?:\([A-Za-z -]+\)\s*)?(calendar\s+)?(months?|days|years?)\b/i;
+
+/** Finds the completion period in months, e.g. "Period of completion: 18 (Eighteen) months" or "90 (Ninety) Days". */
 export function findCompletionMonths(text: string): number | undefined {
-  const match = text.match(
-    /(?:period of completion|completion period|time allowed(?: for completion)?|time of completion|to be completed (?:with)?in)[^0-9]{0,40}?(\d{1,2})\s*(?:\([a-z ]+\)\s*)?months/i
+  const found = labelledValue(
+    text,
+    PERIOD_LABEL,
+    rest => {
+      const m = rest.match(PERIOD_VALUE);
+      if (!m) return undefined;
+      const n = Number(m[1]);
+      const unit = m[3].toLowerCase();
+      const months = unit.startsWith('day') ? Math.ceil(n / 30) : unit.startsWith('year') ? n * 12 : n;
+      return months >= 1 && months <= 120 ? String(months) : undefined;
+    },
+    { lookahead: 1 }
   );
-  return match ? Number(match[1]) : undefined;
+  return found ? Number(found) : undefined;
 }
 
-/** Finds a rupee figure after a label, e.g. "Earnest Money: Rs. 27,24,900" -> "Rs. 27,24,900". */
-function findRupees(text: string, label: RegExp): string | undefined {
-  const match = text.match(
-    new RegExp(`${label.source}[^0-9\\n]{0,40}?(?:Rs\\.?|₹|INR)\\s*([\\d,]+(?:\\.\\d+)?(?:\\s*(?:lakhs?|crores?))?)`, 'i')
-  );
-  return match ? `Rs. ${match[1].replace(/[,.]+$/, '')}` : undefined;
+const AMOUNT =
+  /(?:Rs\.?|₹|INR|रु\.?|\(in INR\))\s*[:\-]?\s*(\d+(?:,\s?\d+)*(?:\.\d+)?)\s*(?:\/-)?\s*(lakhs?|lacs?|crores?|cr\b)?/i;
+
+/** "Rs. 38, 32,203/-" -> { printed: "Rs. 38,32,203", rupees: 3832203 } */
+function parseAmount(s: string): { printed: string; rupees: number } | undefined {
+  const m = s.match(AMOUNT);
+  if (!m) return undefined;
+  // "EMD will be Rs. 50 lakh for tenders valuing above Rs. 50 Cr." is a rule, not this tender's figure.
+  if (/^\s*(?:for|if|where|in case|above|up\s?to|upto|exceeding|and\s*(?:above|$)|or more)\b/i.test(s.slice(m.index! + m[0].length))) {
+    return undefined;
+  }
+  const digits = m[1].replace(/\s/g, '');
+  const unit = m[2]?.toLowerCase();
+  const base = Number(digits.replace(/,/g, ''));
+  const rupees = unit?.startsWith('cr') ? base * 1e7 : unit ? base * 1e5 : base;
+  const printed = `Rs. ${digits}${unit ? ` ${unit.startsWith('cr') ? 'crore' : 'lakh'}` : ''}`;
+  return { printed, rupees };
 }
 
-export const findEmdAmount = (text: string) => findRupees(text, /(?:earnest money(?: deposit)?|\bEMD\b)/);
-export const findEstimatedCost = (text: string) => findRupees(text, /estimated cost(?: put to tender)?/);
+/**
+ * "40% of the estimated cost (i.e. ₹ 7.86 lakhs)" and "works having estimated value of Rs. 10 lakhs" are thresholds,
+ * not this tender's figure.
+ */
+const isFraction = (before: string) =>
+  /\d\s*%\s*(?:of\s*)?(?:the\s*)?$|\b(?:having|valuing|exceeding|above|below|more than|less than|up\s?to)\s*(?:an?\s*|the\s*)?$/i.test(before);
+
+function findAmount(text: string, label: RegExp, minRupees: number): string | undefined {
+  return labelledValue(
+    text,
+    label,
+    rest => {
+      // A data row prints the amount right after the label; prose ("EMD ... subject to a maximum of Rs 20 lakh") doesn't.
+      const amount = parseAmount(rest.slice(0, 45));
+      return amount && amount.rupees >= minRupees ? amount.printed : undefined;
+    },
+    { lookahead: 2, skip: before => isFraction(before) }
+  );
+}
+
+/** GeM bids with item-wise evaluation print one EMD per schedule; no single figure applies then. */
+export const SCHEDULE_WISE_EMD = 'as per the schedule-wise EMD in the bid document';
+
+export function findEmdAmount(text: string): string | undefined {
+  if ((text.match(/Schedule\s*\d+\s*EMD Amount/gi) ?? []).length > 1) return SCHEDULE_WISE_EMD;
+  return findAmount(text, /\b(?:earnest money(?: deposit)?|E\.?M\.?D\.?(?: amount)?|bid security(?: deposit)?)\b/i, 500);
+}
+export const findEstimatedCost = (text: string) =>
+  findAmount(text, /\b(?:estimated (?:cost|value)(?: (?:put to tender|of (?:the )?work))?|tender value|e\.?\s?c\.?\s?p\.?\s?t\.?)\b/i, 10000);
 
 /** Finds the delay compensation rate and cap, e.g. "1.5% per month, maximum 10%". */
 export function findDelayCompensation(text: string): string | undefined {
-  const match = text.match(
+  const match = joinWrapped(text).match(
     /(\d+(?:\.\d+)?\s*%)\s*(?:per month|per mensem|p\.\s?m\.)[^.]{0,120}?(?:maximum|ceiling|limited to|max\.?)\s*(?:of\s*)?(\d+(?:\.\d+)?\s*%)/i
   );
   return match ? `${match[1].replace(/\s/g, '')} per month, maximum ${match[2].replace(/\s/g, '')}` : undefined;
 }
 
+/** PDF lines wrap mid-sentence; join lines within a page so a sentence reads as one. */
+function joinWrapped(text: string): string {
+  return text
+    .split(/\n\s*\n/)
+    .map(block => block.replace(/-\n(?=[a-z])/g, '').replace(/\s*\n\s*/g, ' '))
+    .join('\n');
+}
+
 // A full stop ends a sentence unless it follows an abbreviation like "Rs." or "No.".
-const SENTENCE_END = /(?<!\b(?:Rs|No|Nos|Cl|viz|i\.e|e\.g|Pt|Sr|approx))\.\s+(?=[A-Z(])/;
+const SENTENCE_END = /(?<!\b(?:Rs|No|Nos|Cl|viz|i\.e|e\.g|Pt|Sr|approx|Dt|Govt|Dept|M\/s))\.\s+(?=[A-Z(])/;
 
 function sentencesOf(text: string): string[] {
-  return text
+  return joinWrapped(text)
     .split('\n')
     .flatMap(line => line.split(SENTENCE_END))
     .map(s => s.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 }
 
-const KEY_TERMS: Array<{ label: string; term: RegExp; prefer: RegExp; also?: RegExp }> = [
-  { label: 'Compensation for delay (Clause 2)', term: /compensation for delay/i, prefer: /%/ },
-  { label: 'Price variation (Clause 10CC)', term: /10\s*CC/i, prefer: /appl/i },
-  { label: 'Mobilisation advance', term: /mobili[sz]ation advance/i, prefer: /%/ },
-  { label: 'Security deposit', term: /security deposit/i, prefer: /%|recover|deduct/i, also: /refund|releas|return/i },
-  { label: 'Performance guarantee', term: /performance (?:guarantee|security)/i, prefer: /%/ },
-];
+type QuotedTerm = { label: string; term: RegExp; prefer: RegExp; also?: RegExp };
 
-/**
- * Key contract terms quoted word for word from the tender, so the bid never depends on a model's paraphrase:
- * the first sentence that names the term and carries a figure or "applicable", plus the next sentence when it
- * says how the amount is refunded.
- */
-export function findKeyTerms(text: string): Array<{ label: string; text: string }> {
+function quoteTerms(text: string, terms: QuotedTerm[]): Array<{ label: string; text: string }> {
   const sentences = sentencesOf(text);
-  return KEY_TERMS.flatMap(({ label, term, prefer, also }) => {
+  return terms.flatMap(({ label, term, prefer, also }) => {
     const index = sentences.findIndex(s => term.test(s) && prefer.test(s));
     if (index === -1) return [];
     let quote = sentences[index].replace(/\.?$/, '.');
@@ -90,9 +196,210 @@ export function findKeyTerms(text: string): Array<{ label: string; text: string 
   });
 }
 
+/** Where the sentence holding `at` starts: the last full stop, colon-led row break or clause number before it. */
+function sentenceStart(flat: string, at: number): number {
+  const before = flat.slice(Math.max(0, at - 160), at);
+  const breaks = [...before.matchAll(/(?<!\b(?:Rs|No|Nos|Cl|viz|i\.e|e\.g|Dt|Govt|M\/s))\.\s+|;\s+|\s(?=\(?[ivx]+\)\s|\(?[a-h]\)\s|\d+(?:\.\d+)+\s)/g)];
+  const last = breaks[breaks.length - 1];
+  if (last) return at - before.length + last.index! + last[0].length;
+  // No break close by: start at the term itself rather than mid-word.
+  return at;
+}
+
+/** Up to the end of the sentence that starts at `from`, capped so a table row doesn't run on. */
+function sentenceEnd(flat: string, from: number, cap = 320): number {
+  const rest = flat.slice(from, from + cap);
+  const stop = rest.search(/(?<!\b(?:Rs|No|Nos|Cl|viz|i\.e|e\.g|Dt|Govt|M\/s))\.(?=\s|$)/);
+  return from + (stop === -1 ? rest.length : stop + 1);
+}
+
+const tidyQuote = (s: string) => {
+  const quote = s.replace(/\s+/g, ' ').trim();
+  return /[.!?]$/.test(quote) ? quote : `${quote} …`;
+};
+
+const KEY_TERMS: Array<{ label: string; term: RegExp; prefer: RegExp; also?: RegExp }> = [
+  { label: 'Compensation for delay (Clause 2)', term: /compensation for delay/gi, prefer: /\d\s*%/ },
+  { label: 'Mobilisation advance', term: /mobili[sz]ation advance/gi, prefer: /\d\s*%/ },
+  { label: 'Security deposit', term: /security deposit|retention money/gi, prefer: /\d\s*%/, also: /refund|releas|return/i },
+  { label: 'Performance guarantee', term: /performance (?:guarantee|security)/gi, prefer: /\d\s*%/ },
+];
+
+/**
+ * Clause 10CC as the tender states it. CPWD Schedule F prints it as a table row ("Clause 10 CC ... NOT APPLICABLE"),
+ * and the row text itself can contain "applicable" ("to be applicable in contracts with ..."), so the decisive word
+ * is the last applicability phrase before the next clause heading.
+ */
+function findPriceVariation(flat: string): string | undefined {
+  for (const match of flat.matchAll(/Clause\s*10\s*CC\b/gi)) {
+    const after = flat.slice(match.index!, match.index! + 300);
+    const nextClause = after.slice(10).search(/\bClause\s*\d/i);
+    const window = nextClause === -1 ? after : after.slice(0, nextClause + 10);
+    const phrases = [
+      ...window.matchAll(
+        /\b(?:(?:shall|will|is)\s+not\s+be\s+applicable|not\s+applicable|(?:shall|will)\s+be\s+applicable|is\s+applicable|applicable)\b/gi
+      ),
+    ];
+    const last = phrases[phrases.length - 1];
+    if (!last) continue;
+    // In a Schedule F table the "sentence" runs back through earlier rows; start at this clause's own row then.
+    const sentence = sentenceStart(flat, match.index!);
+    const start = /\bClause\s*\d/i.test(flat.slice(sentence, match.index!)) ? match.index! : sentence;
+    let end = match.index! + last.index! + last[0].length;
+    const stop = flat.slice(end, end + 80).search(/\.(?:\s|$)/);
+    if (stop !== -1 && !/\bClause\s*\d/i.test(flat.slice(end, end + stop))) end += stop + 1;
+    return tidyQuote(flat.slice(start, end)).replace(/ …$/, '.');
+  }
+  return undefined;
+}
+
+/**
+ * Key contract terms quoted word for word from the tender, so the bid never depends on a model's paraphrase.
+ * For each term: the first place it is followed closely by a figure, quoted from the start of its sentence to the
+ * end (capped), plus the next sentence when that says how the amount is refunded. Unfilled template blanks
+ * ("___%") are skipped.
+ */
+export function findKeyTerms(text: string): Array<{ label: string; text: string }> {
+  const flat = joinWrapped(text).replace(/\n/g, ' ');
+  const terms = KEY_TERMS.flatMap(({ label, term, prefer, also }) => {
+    for (const match of flat.matchAll(term)) {
+      let end = sentenceEnd(flat, match.index!);
+      // The figure must be in the term's own sentence, not the next one.
+      const window = flat.slice(match.index!, Math.min(end, match.index! + 200));
+      if (!prefer.test(window) || /_{3,}/.test(window)) continue;
+      const start = sentenceStart(flat, match.index!);
+      if (also && !also.test(flat.slice(start, end))) {
+        const next = sentenceEnd(flat, end);
+        if (also.test(flat.slice(end, next))) end = next;
+      }
+      return [{ label, text: tidyQuote(flat.slice(start, end)).slice(0, 420) }];
+    }
+    return [];
+  });
+  const priceVariation = findPriceVariation(flat);
+  if (priceVariation) terms.splice(1, 0, { label: 'Price variation (Clause 10CC)', text: priceVariation });
+  return terms;
+}
+
+const ANY = /./;
+
+/** Clauses the compliance rules look for in the tender itself rather than in the model's summary. */
+const RISK_CLAUSES: QuotedTerm[] = [
+  { label: 'Unconditional guarantee', term: /unconditional/i, prefer: /guarantee|\bBG\b|bond/i },
+  { label: 'Forfeiture', term: /forfeit/i, prefer: ANY },
+  { label: 'Final and binding', term: /final,? (?:and )?(?:binding|conclusive)/i, prefer: ANY },
+  { label: 'Indemnity', term: /indemnif|indemnity/i, prefer: ANY },
+  { label: 'Dispute resolution', term: /arbitrat|dispute|jurisdiction/i, prefer: ANY },
+  { label: 'Extension of time', term: /extension of time|time extension|extension (?:in|of) (?:the )?(?:completion|contract) period/i, prefer: ANY },
+  { label: 'Force majeure', term: /force majeure/i, prefer: ANY },
+  { label: 'Short notice', term: /within (?:24|48|72) hours|within (?:one|two|three|[123]) days?\b/i, prefer: ANY },
+  { label: 'Online submission', term: /e-?tender|online|portal|digital signature/i, prefer: /submi|bid|tender/i },
+];
+
+/** Risk-bearing clauses quoted from the tender text, one sentence each, absent when the tender has no such clause. */
+export const findRiskClauses = (text: string) => quoteTerms(text, RISK_CLAUSES);
+
+const WORK_NAME_LABEL =
+  /\b(?:name of (?:the )?work(?: & location)?|subject|sub\.?|description of (?:the )?work|name of (?:the )?(?:project|assignment|services?))\b(?:\s*[:\-–])*\s*/i;
+/** A following line that starts a new row ("2 Estimated cost : ...") ends the name. */
+const NEXT_ROW = /^(?:\d+[.)]?\s|[A-Z][A-Za-z ()/.]{2,40}\s*[:\-–]\s)|^(?:estimated|earnest|time allowed|period|tender|nit|e-?tender|bid|issued|dear)\b/i;
+
+/**
+ * The name of work as the NIT prints it, e.g. "Name of work : Carrying out minor maintenance civil works of ...".
+ * It often wraps over two or three lines; the next labelled row ends it.
+ */
+export function findNameOfWork(text: string): string | undefined {
+  const lines = text.split('\n').slice(0, 600);
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(WORK_NAME_LABEL);
+    if (!match || match.index! > 12) continue;
+    let value = lines[i].slice(match.index! + match[0].length).trim();
+    for (let j = i + 1; j < Math.min(i + 4, lines.length) && value.length < 250; j++) {
+      const next = lines[j].trim();
+      if (!next || NEXT_ROW.test(next) || /[.”"]$/.test(value)) break;
+      value += ` ${next}`;
+    }
+    value = value.replace(/^[“"'‘]+|[”"'’]+$/g, '').replace(/\s+/g, ' ').replace(/[.”"’]+$/, '').trim();
+    const words = value.split(' ');
+    const readable = words.filter(w => /^[\p{L}][\p{L}&,().'-]{2,}$/u.test(w)).length / words.length;
+    if (words.length < 4 || readable < 0.6 || /[|°]/.test(value) || /^(?:as per|of the|submission of)\b/i.test(value)) continue;
+    return value.slice(0, 250);
+  }
+  return undefined;
+}
+
+/** Maintenance, repair and rate contracts: work comes as orders over the period, not one build sequence. */
+export function isMaintenanceWork(nameOfWork: string | undefined, text: string): boolean {
+  const name = nameOfWork ?? text.slice(0, 3000);
+  return /\b(?:maintenance|repairs?|renovation|upkeep|white ?washing|painting|replacement|annual (?:rate|maintenance)|rate contract|work orders?)\b/i.test(name);
+}
+
+export type WorksType = 'building' | 'infrastructure' | 'maintenance';
+
+/**
+ * Building (a structure with floors, finishes and services), infrastructure (roads, bridges, drains, pipelines,
+ * boundary walls) or maintenance (repair and rate contracts). Decides which methodology items and which kind of
+ * programme the bid gets.
+ */
+export function findWorksType(nameOfWork: string | undefined, text: string): WorksType {
+  if (isMaintenanceWork(nameOfWork, text)) return 'maintenance';
+  const BUILDING = /\b(?:building|quarters|hostel|block|complex|storey|G\s?\+\s?\d|hospital|school|office|residential|auditorium|housing)\b/i;
+  const INFRASTRUCTURE =
+    /\b(?:road|highway|bridge|ROB|RUB|flyover|culvert|drain|pipeline|sewer|canal|embankment|bounda?ry wall|track|yard)\b/i;
+  const name = nameOfWork ?? text.slice(0, 3000);
+  // "Raising of boundary wall ... at Residential Complex": what is built comes before "at <place>".
+  const object = name.split(/\s+at\s+/i)[0];
+  for (const part of [object, name]) {
+    if (BUILDING.test(part)) return 'building';
+    if (INFRASTRUCTURE.test(part)) return 'infrastructure';
+  }
+  return 'building';
+}
+
+/** IS codes ("IS 1786" -> "1786") and concrete / steel grades ("M25", "Fe500") the whole tender mentions. */
+export function findStandards(text: string): { isCodes: string[]; grades: string[] } {
+  const isCodes = [...text.matchAll(/\bIS[:\s]*(\d{3,5})/g)].map(m => m[1]);
+  const grades = [...text.matchAll(/\b(?:M\s?[-‐–]?\s?(\d{2})|Fe\s?[-‐–]?\s?(\d{3})\s?(?:D)?)\b/g)].map(m => (m[1] ? `M${m[1]}` : `Fe${m[2]}`));
+  return { isCodes: [...new Set(isCodes)], grades: [...new Set(grades)] };
+}
+
+export type TenderKind = 'works' | 'supply' | 'services';
+
+const KIND_SIGNALS: Record<TenderKind, RegExp> = {
+  works:
+    /\bname of (?:the )?work\b|\bconstruction\b|\bcivil works?\b|\bpercentage rate\b|\bitem rate\b|\bCPWD\b|\bschedule\s*['‘’]?F\b|\brepairs?\b|\brenovation\b|\bearthwork\b|\bRCC\b|\bROB\b|\bbridge\b|\bbuilding\b|\bmaintenance (?:civil|works)\b/gi,
+  supply:
+    /\bGeM\b|\bBid Number\b|\bsupply(?:ing)? of\b|\bsupply,?\s+(?:installation|delivery)\b|\bSITC\b|\bcommissioning\b|\bequipment\b|\brate contract\b|\bpurchase\b|\bconsignee\b|\bmake and model\b|\bitem category\b|\bwarranty\b|\bdelivery period\b|\bOEM\b|\bpre-dispatch inspection\b|\bpurchase order\b/gi,
+  services:
+    /\bhiring of\b|\bservices? provider\b|\bmanpower\b|\bsecurity (?:personnel|guards?|services)\b|\bhousekeeping\b|\boutsourc\w*|\bconsultan(?:cy|t)\b|\boperation and maintenance\b|\bannual maintenance contract\b|\bdeployment of\b|\bman-?months?\b|\bscope of services\b/gi,
+};
+
+/**
+ * Works (build or repair), supply (goods, GeM) or services (manpower, security, consultancy, O&M): decides which
+ * bid sections and proformas apply. The NIT head says what is being bought, so it counts three times.
+ */
+export function findTenderKind(text: string): TenderKind {
+  const head = text.slice(0, 6000);
+  const score = (kind: TenderKind) =>
+    (head.match(KIND_SIGNALS[kind])?.length ?? 0) * 3 + Math.min(text.match(KIND_SIGNALS[kind])?.length ?? 0, 60);
+  const ranked = (['works', 'supply', 'services'] as const)
+    .map(kind => ({ kind, score: score(kind) }))
+    .sort((a, b) => b.score - a.score);
+  return ranked[0].score > 0 ? ranked[0].kind : 'works';
+}
+
+const OFFICE =
+  /\b(?:Office of the\s+)?((?:Chief|Superintending|Executive|Divisional|Resident)\s+Engineer[^\n]{0,150}|(?:Chief\s+)?General Manager[^\n]{0,150}|(?:Municipal|Deputy|Additional)\s+Commissioner[^\n]{0,150})/i;
+
 /** Finds the tender inviting office, e.g. "Office of the Executive Engineer, Pune Central Division-II, ...". */
 export function findInvitingOffice(text: string): string | undefined {
-  return text.match(/Office of the (Executive Engineer[^\n]{0,150})/i)?.[1].trim().replace(/[.,]$/, '');
+  const lines = text.split('\n').slice(0, 400);
+  const line = lines.find(l => /\bOffice of the\b/i.test(l) && OFFICE.test(l)) ?? lines.find(l => /\binvites?\b/i.test(l) && OFFICE.test(l));
+  const office = line?.match(OFFICE)?.[1];
+  return office
+    ?.split(/\s+(?:invites?|on behalf|for and on behalf)\b/i)[0]
+    .trim()
+    .replace(/[.,;:]$/, '');
 }
 
 const SOURCE_HEAD_CHARS = 4000;
@@ -114,6 +421,33 @@ export function selectSourceText(fullText: string, chunks: TextChunk[]): string 
   }
   return text.slice(0, SOURCE_TEXT_CHARS);
 }
+
+/** How many chunks fit one summary call: ~4.5k characters each against the ~21k-character prompt budget. */
+const CHUNKS_PER_CALL = 4;
+
+/**
+ * The chunks most about a topic, in document order. A long tender mentions "EMD" or "date" on almost every page, so
+ * taking the first chunks that mention a keyword only ever reads the first pages; ranking by how many distinct
+ * keywords a chunk carries (and how often) finds the schedule or clause that actually sets the term.
+ */
+export function pickChunks(chunks: TextChunk[], keywords: string[], max = CHUNKS_PER_CALL): TextChunk[] {
+  const scored = chunks
+    .map(chunk => {
+      const lower = chunk.text.toLowerCase();
+      const counts = keywords.map(k => lower.split(k).length - 1);
+      const distinct = counts.filter(c => c > 0).length;
+      const total = counts.reduce((a, b) => a + Math.min(b, 5), 0);
+      return { chunk, score: distinct * 3 + total };
+    })
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score || a.chunk.index - b.chunk.index)
+    .slice(0, max)
+    .map(s => s.chunk)
+    .sort((a, b) => a.index - b.index);
+  return scored.length > 0 ? scored : chunks.slice(0, max);
+}
+
+const joinChunks = (chunks: TextChunk[]) => chunks.map(c => c.text).join('\n\n');
 
 /**
  * Tender summarization service (local Qwen model via Ollama)
@@ -211,6 +545,11 @@ export class TenderSummarizationService {
           delayCompensation: findDelayCompensation(input.fullText),
           invitingOffice: findInvitingOffice(input.fullText),
           keyTerms: findKeyTerms(input.fullText),
+          riskClauses: findRiskClauses(input.fullText),
+          tenderKind: findTenderKind(input.fullText),
+          standards: findStandards(input.fullText),
+          nameOfWork: findNameOfWork(input.fullText),
+          worksType: findWorksType(findNameOfWork(input.fullText), input.fullText),
           modelUsed: !this.useLocalModel
             ? 'extractive-fallback'
             : this.fallbackSections > 0
@@ -318,17 +657,8 @@ export class TenderSummarizationService {
    * Focus: EMD, performance security, completion period, defect liability
    */
   private async generateCommercialTerms(chunks: TextChunk[]): Promise<string> {
-    const relevantChunks = chunks.filter(c =>
-      c.text.toLowerCase().includes('emd') ||
-      c.text.toLowerCase().includes('earnest money') ||
-      c.text.toLowerCase().includes('performance') ||
-      c.text.toLowerCase().includes('security') ||
-      c.text.toLowerCase().includes('completion period')
-    ).slice(0, 5);
-
-    const combinedText = relevantChunks.length > 0
-      ? relevantChunks.map(c => c.text).join('\n\n')
-      : chunks.slice(0, 5).map(c => c.text).join('\n\n');
+    const combinedText = joinChunks(pickChunks(chunks, ['emd', 'earnest money', 'bid security', 'estimated cost',
+      'performance guarantee', 'performance security', 'security deposit', 'completion', 'time allowed', 'defect liability']));
 
     return await this.summarize(
       combinedText,
@@ -341,16 +671,8 @@ export class TenderSummarizationService {
    * Focus: Submission deadlines, validity, extension obligations
    */
   private async generateDatesAndObligations(chunks: TextChunk[]): Promise<string> {
-    const relevantChunks = chunks.filter(c =>
-      c.text.toLowerCase().includes('date') ||
-      c.text.toLowerCase().includes('submission') ||
-      c.text.toLowerCase().includes('validity') ||
-      c.text.toLowerCase().includes('deadline')
-    ).slice(0, 5);
-
-    const combinedText = relevantChunks.length > 0
-      ? relevantChunks.map(c => c.text).join('\n\n')
-      : chunks.slice(0, 5).map(c => c.text).join('\n\n');
+    const combinedText = joinChunks(pickChunks(chunks, ['last date', 'due date', 'submission', 'opening', 'bid validity',
+      'validity', 'pre-bid', 'deadline', 'hrs', 'time']));
 
     return await this.summarize(
       combinedText,
@@ -363,21 +685,14 @@ export class TenderSummarizationService {
    * Focus: Nature of works, work categories, complexity (descriptive, not scored)
    */
   private async generateTechnicalScope(chunks: TextChunk[]): Promise<string> {
-    const relevantChunks = chunks.filter(c =>
-      c.source.includes('Chapter 04') ||
-      c.source.includes('Chapter 05') ||
-      c.source.includes('Chapter 06') ||
-      c.text.toLowerCase().includes('specification') ||
-      c.text.toLowerCase().includes('technical')
-    ).slice(0, 8);
-
-    const combinedText = relevantChunks.length > 0
-      ? relevantChunks.map(c => c.text).join('\n\n')
-      : chunks.slice(3, 10).map(c => c.text).join('\n\n');
+    // The name of work (first chunk) plus the chunks most about what is to be built or supplied.
+    const picked = pickChunks(chunks, ['scope of work', 'name of work', 'specification', 'schedule of quantities',
+      'bill of quantities', 'boq', 'supply of', 'grade', 'is:', 'is code', 'make', 'installation'], CHUNKS_PER_CALL - 1);
+    const combinedText = joinChunks([chunks[0], ...picked.filter(c => c !== chunks[0])]);
 
     return await this.summarize(
       combinedText,
-      'Extract: nature of works, major work categories (earthwork, concrete, drainage, etc.), execution scope. Describe factually, do not judge.'
+      'Extract: nature of the work, service or supply; the major items or work categories the tender itself names (do not add categories it does not name); quantities, grades and specifications as printed; execution scope. Describe factually, do not judge.'
     );
   }
 
@@ -386,18 +701,8 @@ export class TenderSummarizationService {
    * Focus: Bonds, guarantees, authority hierarchy, jurisdiction
    */
   private async generateLegalHighlights(chunks: TextChunk[]): Promise<string> {
-    const relevantChunks = chunks.filter(c =>
-      c.text.toLowerCase().includes('bond') ||
-      c.text.toLowerCase().includes('guarantee') ||
-      c.text.toLowerCase().includes('authority') ||
-      c.text.toLowerCase().includes('jurisdiction') ||
-      c.text.toLowerCase().includes('legal') ||
-      c.text.toLowerCase().includes('contract')
-    ).slice(0, 5);
-
-    const combinedText = relevantChunks.length > 0
-      ? relevantChunks.map(c => c.text).join('\n\n')
-      : chunks.slice(2, 7).map(c => c.text).join('\n\n');
+    const combinedText = joinChunks(pickChunks(chunks, ['bank guarantee', 'guarantee', 'bond', 'indemnity',
+      'jurisdiction', 'arbitration', 'dispute', 'termination', 'blacklist', 'debar', 'force majeure', 'penalty']));
 
     return await this.summarize(
       combinedText,
@@ -411,10 +716,11 @@ export class TenderSummarizationService {
    * NOT A RISK ASSESSMENT - only factual summary
    */
   private async generateAttentionPoints(chunks: TextChunk[]): Promise<string> {
-    const allText = chunks.map(c => c.text).join('\n\n');
+    const combinedText = joinChunks(pickChunks(chunks, ['shall be liable', 'forfeit', 'penalty', 'liquidated damages',
+      'compensation', 'at his own cost', 'no claim', 'not be entertained', 'rejected', 'debar', 'mandatory', 'monsoon']));
 
     return await this.summarize(
-      allText,
+      combinedText,
       'Extract: long execution periods, high security requirements, extensive technical scope, any repeated obligations. FACTUAL ONLY. Use phrasing like "The tender specifies..." or "The contractor is obligated to...". Do NOT use "should" or "may be risky".'
     );
   }
@@ -423,10 +729,10 @@ export class TenderSummarizationService {
    * Eligibility criteria and the contract clauses that decide whether and how to bid.
    */
   private async generateEligibilityAndClauses(chunks: TextChunk[]): Promise<string> {
-    const keywords = ['eligib', 'similar work', 'turnover', 'solvency', 'bid capacity', 'compensation', 'delay',
-      'penalty', '10cc', 'price variation', 'escalation', 'advance', 'arbitration', 'dispute'];
-    const relevantChunks = chunks.filter(c => keywords.some(k => c.text.toLowerCase().includes(k))).slice(0, 6);
-    const combinedText = (relevantChunks.length > 0 ? relevantChunks : chunks.slice(0, 5)).map(c => c.text).join('\n\n');
+    const keywords = ['eligib', 'similar work', 'turnover', 'solvency', 'bid capacity', 'compensation for delay',
+      'clause 2', '10cc', '10 cc', 'price variation', 'escalation', 'mobilisation', 'mobilization', 'secured advance',
+      'security deposit', 'performance guarantee', 'arbitration', 'dispute'];
+    const combinedText = joinChunks(pickChunks(chunks, keywords));
 
     return await this.summarize(
       combinedText,
