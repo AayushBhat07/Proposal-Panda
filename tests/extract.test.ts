@@ -33,3 +33,12 @@ test('rejects a .docx with no readable text instead of summarising nothing', asy
 
   await assert.rejects(extractTextFromDocx(file), UnreadableDocumentError);
 });
+
+test('accepts a short but non-empty .docx such as a corrigendum', async () => {
+  const { Document, Packer, Paragraph } = await import('docx');
+  const doc = new Document({ sections: [{ children: [new Paragraph('Corrigendum 1: bid due date extended to 20/10/2026.')] }] });
+  const file = join(mkdtempSync(join(tmpdir(), 'docx-test-')), 'short.docx');
+  writeFileSync(file, await Packer.toBuffer(doc));
+
+  assert.match(await extractTextFromDocx(file), /Corrigendum 1/);
+});
