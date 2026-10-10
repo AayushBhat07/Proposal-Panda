@@ -1,16 +1,24 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import Button from '@/components/ui/Button';
-import Card from '@/components/ui/Card';
-import { FileText } from 'lucide-react';
+import { DEMO_EMAILS } from '@/lib/auth/users';
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, isLoading } = useAuth();
-  const [email, setEmail] = useState('demo@example.com');
+  const [email, setEmail] = useState('writer@proposalpanda.dev');
   const [password, setPassword] = useState('password');
   const [error, setError] = useState('');
   
@@ -20,31 +28,25 @@ export default function LoginPage() {
     
     try {
       await login(email, password);
-      router.push('/dashboard');
+      const next = searchParams.get('next');
+      // Only follow same-site relative paths.
+      router.push(next && next.startsWith('/') && !next.startsWith('//') ? next : '/');
     } catch (err) {
-      setError('Login failed. Please try again.');
-      console.error('Login error:', err);
+      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     }
   };
   
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100">
-      <Card className="w-full max-w-md" variant="elevated">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <FileText className="h-16 w-16 text-blue-600" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Tender Automation Platform
-          </h1>
-          <p className="text-gray-600">
-            Sign in to access your dashboard
-          </p>
+    <div className="min-h-screen bg-paper flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md flex flex-col gap-8">
+        <div className="flex flex-col gap-3">
+          <span className="font-serif text-xl font-semibold text-ink">ProposalPanda</span>
+          <h1 className="font-serif text-4xl leading-tight text-ink">Sign in to the tender register</h1>
         </div>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4 border border-rule-strong bg-sheet p-6 sm:p-8">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="email" className="text-sm text-ink-soft">
               Email
             </label>
             <input
@@ -52,13 +54,13 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-11 border border-rule-strong bg-paper px-3 text-ink"
               required
             />
           </div>
-          
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="password" className="text-sm text-ink-soft">
               Password
             </label>
             <input
@@ -66,33 +68,41 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-11 border border-rule-strong bg-paper px-3 text-ink"
               required
             />
           </div>
-          
+
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-600">{error}</p>
-            </div>
+            <p role="alert" className="border-l-2 border-seal bg-seal-tint px-4 py-3 text-sm text-seal">
+              {error}
+            </p>
           )}
-          
-          <Button
-            type="submit"
-            variant="primary"
-            className="w-full"
-            isLoading={isLoading}
-          >
-            Sign In
+
+          <Button type="submit" className="w-full" isLoading={isLoading}>
+            Sign in
           </Button>
         </form>
-        
-        <div className="mt-6 p-4 bg-blue-50 rounded-md">
-          <p className="text-sm text-gray-700">
-            <strong>Demo Mode:</strong> Any email/password will work. This is a prototype with mock authentication.
+
+        <div className="text-sm text-ink-soft">
+          <p className="mb-2">
+            Demo accounts (password <code className="font-mono">password</code> in development):
           </p>
+          <ul className="flex flex-col gap-1">
+            {DEMO_EMAILS.map(demoEmail => (
+              <li key={demoEmail}>
+                <button
+                  type="button"
+                  className="font-mono text-xs text-forest underline underline-offset-2 hover:text-forest-dark"
+                  onClick={() => setEmail(demoEmail)}
+                >
+                  {demoEmail}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

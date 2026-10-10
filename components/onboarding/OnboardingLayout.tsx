@@ -9,49 +9,28 @@ import { ReactNode } from 'react';
 
 interface OnboardingLayoutProps {
   children: ReactNode;
-  currentStep: 1 | 2 | 3;
+  currentStep: 1 | 2;
 }
 
 export default function OnboardingLayout({ children, currentStep }: OnboardingLayoutProps) {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <div className="w-10 h-10 bg-amber-900 rounded-lg flex items-center justify-center">
-              <span className="text-white text-xl">📋</span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">InfraTender AI</h1>
-          </div>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-            Welcome to InfraTender AI
-          </h2>
-          <p className="text-gray-600">
-            Let's set up your secure workspace for tender analysis.
+    <div className="min-h-screen bg-paper flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-3xl">
+        <div className="mb-10 flex flex-col gap-3">
+          <span className="font-serif text-xl font-semibold text-ink">ProposalPanda</span>
+          <h1 className="font-serif text-4xl leading-tight text-ink">Set up your company file</h1>
+          <p className="text-ink-soft">
+            These details fill the proformas in every bid, so enter them as they appear on your registration.
           </p>
         </div>
 
-        {/* Step Indicator */}
-        <div className="flex items-center justify-center gap-8 mb-12">
-          <Step number={1} label="COMPANY" isActive={currentStep === 1} isComplete={currentStep > 1} />
-          <StepConnector />
-          <Step number={2} label="ROLE" isActive={currentStep === 2} isComplete={currentStep > 2} />
-          <StepConnector />
-          <Step number={3} label="REVIEW" isActive={currentStep === 3} isComplete={false} />
-        </div>
+        <ol className="mb-8 flex items-center gap-4" aria-label="Steps">
+          <Step number={1} label="Company" isActive={currentStep === 1} isComplete={currentStep > 1} />
+          <li aria-hidden className="h-px w-16 bg-rule-strong" />
+          <Step number={2} label="Review" isActive={currentStep === 2} isComplete={false} />
+        </ol>
 
-        {/* Content */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
-          {children}
-        </div>
-
-        {/* Footer */}
-        <div className="mt-8 text-center text-sm text-gray-500 flex items-center justify-center gap-6">
-          <a href="#" className="hover:text-gray-700">Privacy Policy</a>
-          <a href="#" className="hover:text-gray-700">Terms of Service</a>
-          <a href="#" className="hover:text-gray-700">Support</a>
-        </div>
+        <div className="border border-rule-strong bg-sheet p-6 sm:p-8">{children}</div>
       </div>
     </div>
   );
@@ -66,24 +45,15 @@ interface StepProps {
 
 function Step({ number, label, isActive, isComplete }: StepProps) {
   return (
-    <div className="flex flex-col items-center">
-      <div
-        className={`
-          w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg
-          ${isComplete ? 'bg-amber-900 text-white' : ''}
-          ${isActive ? 'bg-amber-900 text-white' : ''}
-          ${!isActive && !isComplete ? 'bg-gray-200 text-gray-500' : ''}
-        `}
+    <li className="flex items-center gap-2" aria-current={isActive ? 'step' : undefined}>
+      <span
+        className={`flex h-7 w-7 items-center justify-center rounded-full font-mono text-xs ${
+          isActive || isComplete ? 'bg-forest text-paper' : 'border border-rule-strong text-muted'
+        }`}
       >
         {isComplete ? '✓' : number}
-      </div>
-      <span className={`mt-2 text-xs font-medium ${isActive ? 'text-gray-900' : 'text-gray-400'}`}>
-        {label}
       </span>
-    </div>
+      <span className={`text-sm ${isActive ? 'font-medium text-ink' : 'text-muted'}`}>{label}</span>
+    </li>
   );
-}
-
-function StepConnector() {
-  return <div className="w-24 h-0.5 bg-gray-300" />;
 }

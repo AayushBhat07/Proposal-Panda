@@ -1,6 +1,6 @@
 /**
  * PHASE 4A: Tender Summarization Types
- * Defines structured output for BART-based post-generation summarization
+ * Defines structured output for tender summarization
  */
 
 /**
@@ -62,13 +62,52 @@ export interface TenderSummary {
   attentionPoints: string;
 
   /**
+   * Eligibility criteria and key contract clauses
+   * - Similar works, turnover, solvency, bid capacity
+   * - Delay compensation and cap, price variation, advances
+   * - Dispute resolution
+   */
+  eligibilityAndClauses?: string;
+
+  /** Start of the extracted tender text, so bid drafting can cite exact terms. */
+  sourceText?: string;
+
+  /**
    * Metadata
    */
   metadata: {
     tenderId: string;
     tenderTitle: string;
     generatedAt: Date;
-    modelUsed: 'BART-large-cnn' | 'BART-base';
+    /** NIT / tender reference number found in the document, if any */
+    nitReference?: string;
+    /** Completion period in months found in the document, if any */
+    completionMonths?: number;
+    /** EMD as printed, e.g. "Rs. 27,24,900", if found */
+    emdAmount?: string;
+    /** Estimated cost put to tender as printed, if found */
+    estimatedCost?: string;
+    /** Compensation for delay, e.g. "1.5% per month, maximum 10%", if found */
+    delayCompensation?: string;
+    /** Tender inviting office, e.g. "Executive Engineer, Pune Central Division-II, ...", if found */
+    invitingOffice?: string;
+    /** Delay, price variation, advance, security deposit and guarantee terms quoted from the tender text */
+    keyTerms?: Array<{ label: string; text: string }>;
+    /** Risk-bearing clauses (guarantees, forfeiture, finality, disputes, extensions...) quoted from the tender text */
+    riskClauses?: Array<{ label: string; text: string }>;
+    /** Works (build/repair), supply (goods, GeM) or services (manpower, security, consultancy, O&M) */
+    tenderKind?: 'works' | 'supply' | 'services';
+    /** IS codes and concrete / steel grades mentioned anywhere in the tender, to check drafts against */
+    standards?: { isCodes: string[]; grades: string[] };
+    /** Name of work / subject as printed in the NIT, if found */
+    nameOfWork?: string;
+    /** For works tenders: a building, infrastructure (road, bridge, drain...) or maintenance / repair contract */
+    worksType?: 'building' | 'infrastructure' | 'maintenance';
+    /**
+     * Ollama model tag; "<model> (+N extractive)" when N sections fell back;
+     * 'extractive-fallback' when no local model was reachable
+     */
+    modelUsed: string;
     totalChunks: number;
     processingTimeMs: number;
   };
@@ -100,7 +139,7 @@ export interface TenderDocumentInput {
 }
 
 /**
- * Text chunk for processing with BART
+ * Text chunk for summarization
  */
 export interface TextChunk {
   index: number;
@@ -114,12 +153,12 @@ export interface TextChunk {
  */
 export interface SummarizationOptions {
   /**
-   * Model to use (default: BART-large-cnn)
+   * Ollama model tag (default: AI_CONFIG.ANALYSIS_MODEL)
    */
-  model?: 'BART-large-cnn' | 'BART-base';
+  model?: string;
 
   /**
-   * Maximum tokens per chunk (default: 1024 for BART)
+   * Maximum tokens per chunk (default: 1024)
    */
   maxTokensPerChunk?: number;
 

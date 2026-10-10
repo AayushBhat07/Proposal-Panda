@@ -2,7 +2,7 @@
  * PHASE 4A: Summarization Services - Public API
  */
 
-export { BARTSummarizationService, bartSummarizationService } from './bartService';
+export { TenderSummarizationService, tenderSummarizationService } from './summarizer';
 export {
   extractTextFromDocx,
   extractTextFromPlainText,

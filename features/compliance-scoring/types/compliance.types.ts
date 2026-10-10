@@ -109,20 +109,8 @@ export interface ComplianceScore {
  */
 export interface ComplianceAnalysisOptions {
   /**
-   * Model to use for analysis
-   * Default: Qwen2.5-3B-Instruct
-   */
-  model?: 'qwen2.5:3b-instruct' | 'phi3:mini';
-
-  /**
-   * Temperature for inference (low = deterministic)
-   * Default: 0.1
-   */
-  temperature?: number;
-
-  /**
-   * Conservative scoring bias (government tenders favor authority)
-   * Default: true
+   * Take 5 more points off every score (government tenders favor authority)
+   * Default: false
    */
   conservativeBias?: boolean;
 
@@ -199,6 +187,11 @@ export interface ComplianceScoringInput {
       modelUsed: string;
       totalChunks: number;
       processingTimeMs: number;
+      completionMonths?: number;
+      /** Key contract terms quoted word for word from the tender text */
+      keyTerms?: Array<{ label: string; text: string }>;
+      /** Risk-bearing clauses quoted from the tender text */
+      riskClauses?: Array<{ label: string; text: string }>;
     };
   };
 
