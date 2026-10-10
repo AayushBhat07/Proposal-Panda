@@ -4,9 +4,71 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import mammoth from 'mammoth';
-import { extractText, getDocumentProxy } from 'unpdf';
+import { getDocumentProxy } from 'unpdf';
+
+const run = promisify(execFile);
+
+/** Below this many letters/digits a PDF is treated as having no text layer. */
+const MIN_TEXT_CHARS = 200;
+/** OCR is slow (a few seconds a page); NIT, eligibility and key conditions sit in the first pages. */
+const MAX_OCR_PAGES = 40;
+
+const meaningfulChars = (text: string) => (text.match(/[\p{L}\p{N}]/gu) ?? []).length;
+
+/**
+ * PDF text with its line and page breaks kept. The patterns that find the NIT number, EMD, office and contract
+ * clauses work line by line, so flattening a PDF into one line (as a plain merge does) breaks them.
+ */
+export async function extractPdfText(filePath: string): Promise<string> {
+  const pdf = await getDocumentProxy(new Uint8Array(fs.readFileSync(filePath)));
+  const pages: string[] = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const content = await page.getTextContent();
+    let text = '';
+    for (const item of content.items) {
+      if ('str' in item) text += item.str + (item.hasEOL ? '\n' : '');
+    }
+    pages.push(text.replace(/[ \t]+\n/g, '\n').trim());
+  }
+  return pages.join('\n\n');
+}
+
+/** OCR a scanned PDF with poppler + tesseract when both are installed; undefined when they aren't. */
+async function ocrPdf(filePath: string): Promise<string | undefined> {
+  try {
+    await run('pdftoppm', ['-v']);
+    await run('tesseract', ['--version']);
+  } catch {
+    return undefined;
+  }
+  const { stdout: langList } = await run('tesseract', ['--list-langs']);
+  const langs = ['eng', 'hin'].filter(l => langList.split('\n').includes(l)).join('+') || 'eng';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tender-ocr-'));
+  try {
+    await run('pdftoppm', ['-r', '200', '-gray', '-png', '-l', String(MAX_OCR_PAGES), filePath, path.join(dir, 'p')], {
+      timeout: 300000,
+    });
+    const images = fs.readdirSync(dir).filter(f => f.endsWith('.png')).sort();
+    const pages: string[] = [];
+    for (const image of images) {
+      const { stdout } = await run('tesseract', [path.join(dir, image), '-', '-l', langs], {
+        timeout: 120000,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      pages.push(stdout.trim());
+    }
+    console.log(`📄 OCR read ${images.length} page(s) with tesseract (${langs})`);
+    return pages.join('\n\n');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 /**
  * Extract text from .docx file
@@ -46,14 +108,21 @@ export async function extractTextFromDocx(filePath: string): Promise<string> {
       return extractedText || 'Failed to extract meaningful text from .docx';
     }
 
-    // Handle .pdf format (text layer only; scanned PDFs need OCR first)
+    // Handle .pdf format: the text layer, or OCR when the PDF is a scan
     if (ext === '.pdf') {
-      const pdf = await getDocumentProxy(new Uint8Array(fs.readFileSync(filePath)));
-      const { text } = await extractText(pdf, { mergePages: true });
-      if (text.trim().length < 100) {
-        throw new Error('No text layer found in PDF. Scanned tenders need OCR before upload.');
+      const text = await extractPdfText(filePath);
+      if (meaningfulChars(text) >= MIN_TEXT_CHARS) return text;
+      const ocr = await ocrPdf(filePath);
+      if (ocr === undefined) {
+        throw new Error(
+          'No text layer found in PDF (it looks scanned). Install poppler and tesseract (brew install poppler tesseract) ' +
+            'to read scans, or upload a text PDF.'
+        );
       }
-      return text;
+      if (meaningfulChars(ocr) < MIN_TEXT_CHARS) {
+        throw new Error('No readable text found in PDF, even with OCR. Upload a clearer scan or a text PDF.');
+      }
+      return ocr;
     }
 
     throw new Error(`Unsupported file format: ${ext}`);

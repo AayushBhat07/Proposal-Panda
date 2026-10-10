@@ -19,8 +19,6 @@ export default function CompanyInfoForm({ onNext, initialData }: CompanyInfoForm
     initialData || {
       legalName: '',
       registrationClass: '',
-      gstin: '',
-      panNumber: '',
       registeredAddress: '',
     }
   );
@@ -33,8 +31,6 @@ export default function CompanyInfoForm({ onNext, initialData }: CompanyInfoForm
   const isValid =
     formData.legalName &&
     formData.registrationClass &&
-    formData.gstin &&
-    formData.panNumber &&
     formData.registeredAddress;
 
   return (
@@ -76,29 +72,9 @@ export default function CompanyInfoForm({ onNext, initialData }: CompanyInfoForm
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-ink-soft mb-2">GSTIN</label>
-          <input
-            type="text"
-            value={formData.gstin}
-            onChange={e => setFormData({ ...formData, gstin: e.target.value })}
-            placeholder="27ABCDE1234F1Z5"
-            className="w-full min-h-11 px-3 py-2 border border-rule-strong bg-paper text-ink"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-ink-soft mb-2">
-            PAN NUMBER
-          </label>
-          <input
-            type="text"
-            value={formData.panNumber}
-            onChange={e => setFormData({ ...formData, panNumber: e.target.value })}
-            placeholder="ABCDE1234F"
-            className="w-full min-h-11 px-3 py-2 border border-rule-strong bg-paper text-ink"
-          />
-        </div>
+        <p className="text-sm text-ink-soft sm:col-span-2">
+          GSTIN and PAN go in the encrypted vault, set up after onboarding. They are never stored in the clear.
+        </p>
       </div>
 
       <div>
