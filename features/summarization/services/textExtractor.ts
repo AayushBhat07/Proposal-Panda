@@ -20,6 +20,11 @@ const MAX_OCR_PAGES = 40;
 
 const meaningfulChars = (text: string) => (text.match(/[\p{L}\p{N}]/gu) ?? []).length;
 
+/** The uploaded document has no usable text. The message is safe to show the user. */
+export class UnreadableDocumentError extends Error {
+  name = 'UnreadableDocumentError';
+}
+
 /**
  * PDF text with its line and page breaks kept. The patterns that find the NIT number, EMD, office and contract
  * clauses work line by line, so flattening a PDF into one line (as a plain merge does) breaks them.
@@ -99,13 +104,12 @@ export async function extractTextFromDocx(filePath: string): Promise<string> {
       const result = await mammoth.extractRawText({ buffer });
       const extractedText = result.value;
       
-      if (extractedText.length < 100) {
-        console.warn('⚠️  Limited text extracted from .docx. File may be empty or corrupted.');
-      } else {
-        console.log(`✓ Extracted ${extractedText.length} characters from .docx`);
+      // A short notice or corrigendum is still a valid tender document; only an empty one is not.
+      if (meaningfulChars(extractedText) === 0) {
+        throw new UnreadableDocumentError('No readable text found in the .docx. Check that it is the tender document and not empty.');
       }
-      
-      return extractedText || 'Failed to extract meaningful text from .docx';
+      console.log(`✓ Extracted ${extractedText.length} characters from .docx`);
+      return extractedText;
     }
 
     // Handle .pdf format: the text layer, or OCR when the PDF is a scan
@@ -114,19 +118,20 @@ export async function extractTextFromDocx(filePath: string): Promise<string> {
       if (meaningfulChars(text) >= MIN_TEXT_CHARS) return text;
       const ocr = await ocrPdf(filePath);
       if (ocr === undefined) {
-        throw new Error(
+        throw new UnreadableDocumentError(
           'No text layer found in PDF (it looks scanned). Install poppler and tesseract (brew install poppler tesseract) ' +
             'to read scans, or upload a text PDF.'
         );
       }
       if (meaningfulChars(ocr) < MIN_TEXT_CHARS) {
-        throw new Error('No readable text found in PDF, even with OCR. Upload a clearer scan or a text PDF.');
+        throw new UnreadableDocumentError('No readable text found in PDF, even with OCR. Upload a clearer scan or a text PDF.');
       }
       return ocr;
     }
 
     throw new Error(`Unsupported file format: ${ext}`);
   } catch (error) {
+    if (error instanceof UnreadableDocumentError) throw error;
     throw new Error(`Failed to extract text: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

@@ -32,7 +32,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[API] Bid generation failed:', message);
-    const status = error instanceof BidModelUnavailableError ? 503 : 500;
-    return NextResponse.json({ error: 'Failed to generate the foundation bid.', details: message }, { status });
+    // Only the model-unavailable message is meant for the user; other internals stay in the server log.
+    if (error instanceof BidModelUnavailableError) {
+      return NextResponse.json({ error: 'Failed to generate the foundation bid.', details: message }, { status: 503 });
+    }
+    return NextResponse.json({ error: 'Failed to generate the foundation bid.' }, { status: 500 });
   }
 }
