@@ -7,6 +7,7 @@
 
 import { AI_CONFIG } from '@/lib/config/constants';
 import { checkLlmHealth, generateWithLlmSafe } from '@/lib/llm/ollama';
+import { UnreadableDocumentError } from './textExtractor';
 import type {
   TenderDocumentInput,
   TenderSummary,
@@ -500,7 +501,7 @@ export class TenderSummarizationService {
 
       if (chunks.length === 0) {
         diagnostics.errors.push('No text chunks generated from input');
-        throw new Error('Empty input document');
+        throw new UnreadableDocumentError('No readable text found in the document.');
       }
 
       // Step 2: Check the local model once, then generate each section.
@@ -602,7 +603,7 @@ export class TenderSummarizationService {
    */
   private splitIntoChunks(text: string, source: string): TextChunk[] {
     const chunks: TextChunk[] = [];
-    const words = text.split(/\s+/);
+    const words = text.split(/\s+/).filter(Boolean);
     
     // Approximate tokens (1 token ≈ 0.75 words for English)
     const wordsPerChunk = Math.floor(this.maxTokensPerChunk * 0.75);
@@ -623,7 +624,8 @@ export class TenderSummarizationService {
         source,
       });
 
-      startIndex += wordsPerChunk - overlapWords;
+      // An overlap as large as the chunk would never move forward.
+      startIndex += Math.max(1, wordsPerChunk - overlapWords);
       chunkIndex++;
     }
 
