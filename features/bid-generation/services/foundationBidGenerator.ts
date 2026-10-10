@@ -2,7 +2,8 @@
  * Foundation bid generation (server-side).
  * Follows the Indian two-bid structure (CPWD / state PWD): Cover I technical bid with letter of transmittal,
  * document checklist, declarations, eligibility and bid capacity, scope, methodology, compliance and pre-bid
- * queries; Cover II price bid. Narrative sections come from the local Llama 3 model (AI_CONFIG.MODEL_NAME);
+ * queries; Cover II price bid. Goods (GeM / store purchase) and services tenders get the same split with their
+ * own methodology, eligibility proforma and queries, and no construction programme. Narrative sections come from the local Llama 3 model (AI_CONFIG.MODEL_NAME);
  * standard proformas come from bidTemplates.ts.
  */
 
@@ -11,8 +12,10 @@ import { checkLlmHealth, generateWithLlm } from '@/lib/llm/ollama';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator/types/orchestration.types';
 import type { CompanyProfile } from '@/types/onboarding.types';
 import type { BidSection, FoundationBid } from '../types/bid.types';
-import { TEMPLATE_SECTIONS } from './bidTemplates';
+import { TEMPLATE_SECTIONS, type TenderKind } from './bidTemplates';
 import { GSTIN_TOKEN, PAN_TOKEN } from '@/lib/vault/bidVault';
+
+type WorksType = 'building' | 'infrastructure' | 'maintenance';
 
 /** Tender facts the draft checks compare against. */
 export interface DraftFacts {
@@ -33,6 +36,53 @@ export interface DraftFacts {
   /** Key contract terms quoted from the tender text */
   keyTerms?: Array<{ label: string; text: string }>;
   sourceText?: string;
+  /** Works, supply or services; defaults to works */
+  kind?: TenderKind;
+}
+
+/** Methodology items in build order, each kept only when the tender text names it. */
+const METHOD_ITEMS: Array<[string, RegExp]> = [
+  ['earthwork and foundations', /earth ?work|excavation|foundation|footing|pile|embankment/i],
+  ['RCC superstructure (concrete grade, steel grade)', /\bRCC\b|reinforced cement concrete|superstructure|column|slab/i],
+  ['masonry', /masonry|brick ?work|block ?work|\bAAC\b/i],
+  ['flooring and finishes', /flooring|tiles?\b|plaster|painting|false ceiling|finishes/i],
+  ['waterproofing', /water ?proofing/i],
+  ['water supply', /water supply/i],
+  ['sanitary installations', /sanitary|plumbing|manhole/i],
+  ['electrical installations', /electrical|wiring/i],
+  ['roads', /\broad\b|carriageway|\bGSB\b|\bWMM\b|\bDBM\b|bituminous|paver/i],
+  ['bridges and culverts', /bridge|\bROB\b|\bRUB\b|culvert|girder|\bpier\b|abutment/i],
+  ['drainage', /drain|hume pipe|\bNP-?\s?[234]\b|cross drainage/i],
+  ['GRIHA / green-building measures', /GRIHA|green[- ]building/i],
+];
+/** When the text names no item (a one-page notice), the common building items; GRIHA only if the tender asks. */
+const METHOD_LIST = METHOD_ITEMS.map(([item]) => item).filter(item => !item.startsWith('GRIHA')).join('; ');
+
+/** Items that belong to roads, bridges, drains and walls; a building's items there come from general conditions. */
+const INFRASTRUCTURE_ITEMS = new Set(['earthwork and foundations', 'roads', 'bridges and culverts', 'drainage', 'GRIHA / green-building measures']);
+
+/** The methodology items this tender names, in build order (the common ones when the text names none). */
+export function methodologyItems(tenderText: string, worksType?: WorksType, nameOfWork = ''): string {
+  const named = METHOD_ITEMS.filter(([, pattern]) => pattern.test(tenderText))
+    .map(([item]) => item)
+    .filter(item => worksType !== 'infrastructure' || INFRASTRUCTURE_ITEMS.has(item) || (item === 'masonry' && /\bwall\b/i.test(nameOfWork)));
+  return named.length ? named.join('; ') : METHOD_LIST;
+}
+
+/** GRIHA, RMC and road terms appear in the briefs only when the tender itself mentions them. */
+export function fitBriefToTender(brief: string, tenderText: string): string {
+  let out = brief;
+  if (!/GRIHA|green[- ]building/i.test(tenderText)) {
+    out = out
+      .replace(/;?\s*GRIHA \/ green-building measures/g, '')
+      .replace(/, GRIHA(?= and|,)/g, '')
+      .replace(/\bGRIHA, /g, '');
+  }
+  if (!/\bRMC\b|ready[- ]mix/i.test(tenderText)) out = out.replace(/,? ?RMC plant approval/g, '');
+  if (!/\broad\b|carriageway|\bGSB\b|\bWMM\b/i.test(tenderText)) {
+    out = out.replace(/ ?"Earthwork and foundations" means the building foundations, not the road; GSB, WMM, DBM and BC belong only to the road\./, '');
+  }
+  return out.replace(/\s*\(e\.g\.\s*\)/g, '').replace(/\s+\(e\.g\.\s*,\s*/g, ' (e.g. ').replace(/\s+,/g, ',');
 }
 
 /** Removes lines that match, then renumbers the numbered ones 1, 2, 3... */
@@ -53,11 +103,25 @@ const QUOTED_TERMS =
 const BAD_QUERY =
   /^(?=.*10\s*CC)(?!.*(?:price|escalat|variation))|security deposit.{0,60}recover|recover.{0,60}security deposit|late fee|provision for (?:any )?(?:price variation|escalation)|how (?:will|shall|should) the contractor|absence of|\black(?:s|ing)? (?:a|any|clear)|not (?:clearly )?(?:mentioned|specified|provided|defined)|does not (?:include|contain|mention|specify|provide)/i;
 
-const IS_CODE = /\bIS[:\s]*(\d{3,5})(?:\s*\(?\s*(?:Part|Pt\.?)\s*\d+\s*\)?)?(?:\s*:\s*\d{4})?/g;
+const IS_CODE = /\bIS[:\s]*(\d{3,5})(?:\s*\(?\s*(?:Part|Pt\.?)\s*\d+\s*\)?)?(?:\s*[:\-–]\s*\d{4})?/g;
 
 /** IS code numbers mentioned in a text, e.g. "IS 2185 (Part 3)" -> "2185". */
 export function isCodesIn(text: string): Set<string> {
   return new Set([...text.matchAll(IS_CODE)].map(m => m[1]));
+}
+
+const GRADE = /\b(?:M\s?[-‐–]?\s?(\d{2})|Fe\s?[-‐–]?\s?(\d{3})\s?(?:D)?)\b/g;
+
+/** Concrete and steel grades mentioned in a text, e.g. "M25" -> "M25", "Fe 500D" -> "Fe500". */
+export function gradesIn(text: string): Set<string> {
+  return new Set([...text.matchAll(GRADE)].map(m => (m[1] ? `M${m[1]}` : `Fe${m[2]}`)));
+}
+
+/** Replaces concrete / steel grades the tender never mentions ("M25", "Fe 500D" in a tender that has neither). */
+export function redactUnknownGrades(content: string, known: Set<string>): string {
+  return content.replace(GRADE, (match, m: string, fe: string) =>
+    known.has(m ? `M${m}` : `Fe${fe}`) ? match : m ? '[concrete grade as per tender]' : '[steel grade as per tender]'
+  );
 }
 
 /** Replaces IS codes the tender never mentions, so a plausible but wrong standard can't slip into the bid. */
@@ -139,15 +203,17 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
       'Do not describe the bidder\'s capabilities or experience. Do not mention any quoted price. End with a ' +
       'signatory block: Yours faithfully, [Name], [Designation], for <company name>.',
     check: (content, { emdAmount }) =>
-      emdAmount && !content.replace(/\s/g, '').includes(emdAmount.replace(/^Rs\.\s*/, ''))
+      emdAmount?.startsWith('Rs.') && !content.replace(/\s/g, '').includes(emdAmount.replace(/^Rs\.\s*/, ''))
         ? 'it does not state the EMD amount'
         : undefined,
-    finish: (content, { nitRef, tenderTitle, invitingOffice }) =>
+    finish: (content, { nitRef, tenderTitle, invitingOffice, kind = 'works' }) =>
       [
         'To,',
         ...(invitingOffice
           ? `The ${invitingOffice}`.split(/,\s*/).map((part, i, all) => (i < all.length - 1 ? `${part},` : part))
-          : ['The Executive Engineer,', '[Division and address as per NIT]']),
+          : kind === 'works'
+            ? ['The Executive Engineer,', '[Division and address as per NIT]']
+            : ['[Designation of the tender inviting authority],', '[Address as per NIT]']),
         '',
         `Sub: Submission of bid for "${tenderTitle}" against NIT No. ${nitRef}`,
         '',
@@ -165,10 +231,7 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     title: 'Construction Methodology',
     cover: 'technical',
     brief:
-      'Construction methodology, one short paragraph per item, in this order, skipping only items the tender does ' +
-      'not include: earthwork and foundations; RCC superstructure (concrete grade, steel grade); masonry; flooring ' +
-      'and finishes; waterproofing; water supply; sanitary installations; electrical installations; roads; drainage; ' +
-      'GRIHA / green-building measures. In each paragraph name only the specifications and standards the tender ' +
+      'Construction methodology, one short paragraph per item, in this order: {methodItems}. In each paragraph name only the specifications and standards the tender ' +
       'text gives for that item, copied as written with their figures (layer names and thicknesses, widths, grades), ' +
       'the sequence of work, and the physical or laboratory tests that apply to that item. Attach a standard only to ' +
       'the item the tender text uses it for. ' +
@@ -252,7 +315,7 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     title: 'Pre-bid Queries and Clarifications',
     cover: 'technical',
     brief:
-      'Between 5 and 10 numbered pre-bid queries (1., 2., ...) the contractor should raise with the department, and nothing else. ' +
+      'Between 8 and 10 numbered pre-bid queries (1., 2., ...) the contractor should raise with the department, and nothing else. ' +
       'Never ask about anything the tender already states clearly (deadlines, EMD, forms, how security deposit is ' +
       'recovered). Do not repeat a query. Cite a clause number only if the analysis gives that number for the very term you ask about. Focus on ambiguous or ' +
       'onerous conditions: delay compensation and its cap, price variation / escalation, advances, third-party ' +
@@ -262,7 +325,8 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
     clean: content => dropLines(content, BAD_QUERY),
     check: content => {
       const count = content.match(/^\s*\d+[.)]\s/gm)?.length ?? 0;
-      return count < 5 ? `it has only ${count} usable numbered queries` : undefined;
+      // A small job may only have three or four real questions; withholding those helps nobody.
+      return count < 3 ? `it has only ${count} usable numbered queries` : undefined;
     },
   },
 };
@@ -289,6 +353,7 @@ export function tidyDraft(content: string): string {
   return content
     .replace(/^\s*Here is[^\n]*:\s*\n/i, '')
     .replace(/\n\s*\**Note\b[^\n]*(?:\n(?!\s*\n)[^\n]*)*\s*$/i, '')
+    .replace(/\n\s*(?:Please note|Note that|This section (?:only )?provides|The above (?:is|are|methodology))[^\n]*(?:\n(?!\s*\n)[^\n]*)*\s*$/i, '')
     .trim();
 }
 
@@ -334,6 +399,138 @@ export function renderProgramme(draft: string, months: number | undefined, hasRo
   ].join('\n');
 }
 
+const KIND_NOUN: Record<TenderKind, string> = { works: 'work', supply: 'supply', services: 'services' };
+
+/** The works sections reworded for goods and services tenders; anything not listed is shared. */
+export function sectionsFor(kind: TenderKind): typeof MODEL_SECTIONS {
+  if (kind === 'works') return MODEL_SECTIONS;
+  const noun = KIND_NOUN[kind];
+  return {
+    ...MODEL_SECTIONS,
+    transmittal: {
+      ...MODEL_SECTIONS.transmittal,
+      brief: MODEL_SECTIONS.transmittal.brief
+        .replace('to the Executive Engineer, in the CPWD style,', 'to the tender inviting authority,')
+        .replace('(EMD, registration, financial information, similar works, affidavits)', '(EMD or bid security declaration, registrations, financial information, past orders, declarations)'),
+    },
+    scope: {
+      ...MODEL_SECTIONS.scope,
+      title: `Understanding of Scope of ${kind === 'supply' ? 'Supply' : 'Services'}`,
+      brief: `Restate the scope of ${noun}, the place of ${kind === 'supply' ? 'delivery / consignees' : 'service'}, the ${kind === 'supply' ? 'delivery' : 'contract'} period and the key deliverables, as the tender states them, to show the tender was understood.`,
+    },
+    methodology:
+      kind === 'supply'
+        ? {
+            id: 'supply-plan',
+            title: 'Supply, Delivery and Quality Plan',
+            cover: 'technical',
+            brief:
+              'How the bidder will supply the items, one short paragraph each: sourcing of the items to the ' +
+              'specifications the tender text gives (write the make and model as [make / model]); inspection and ' +
+              'testing before dispatch, as the tender states; packing and delivery to the consignee(s) within the ' +
+              'delivery period; installation, commissioning and training only if the tender asks for them; warranty ' +
+              'and after-sales support for the period the tender states. Copy specifications and periods exactly; ' +
+              'never invent a brand, model, certificate or period. Do not end with a note or disclaimer.',
+            needsSource: true,
+            maxTokens: 1200,
+          }
+        : {
+            id: 'service-methodology',
+            title: 'Service Delivery Methodology',
+            cover: 'technical',
+            brief:
+              'How the bidder will deliver the services, one short paragraph each: mobilisation and deployment by the ' +
+              'start date; manpower by category and number exactly as the tender states (or [number] if it does not); ' +
+              'shifts, supervision and attendance; statutory obligations the tender names (minimum wages, EPF, ESI, ' +
+              'licences) stated as obligations the bidder will meet; reporting to the department; meeting the service ' +
+              'levels and penalties the tender states; replacement and leave reserve. Never invent numbers, rates or ' +
+              'licences. Do not end with a note or disclaimer.',
+            needsSource: true,
+            maxTokens: 1200,
+          },
+    compliance: {
+      ...MODEL_SECTIONS.compliance,
+      brief: MODEL_SECTIONS.compliance.brief
+        .replace('technical, quality, GRIHA, labour and legal requirement', `technical, ${kind === 'supply' ? 'inspection, warranty' : 'manpower, statutory'} and legal requirement`)
+        .replace('(similar works, turnover, no-loss, solvency, bid capacity)', `(similar ${kind === 'supply' ? 'supplies' : 'services'}, turnover, OEM authorisation, registrations)`),
+    },
+    queries: {
+      ...MODEL_SECTIONS.queries,
+      brief: MODEL_SECTIONS.queries.brief
+        .replace('the contractor should raise', 'the bidder should raise')
+        .replace(
+          'delay compensation and its cap, price variation / escalation, advances, third-party approvals or certification costs (e.g. GRIHA, RMC plant approval), site access and utilities.',
+          kind === 'supply'
+            ? 'specifications that are ambiguous or point to one brand, delivery period and consignee locations, inspection and acceptance, warranty start and scope, liquidated damages, and payment terms.'
+            : 'manpower numbers and categories, how minimum wage and statutory revisions are paid, penalties and service levels, equipment or consumables the bidder must provide, contract extension, and payment cycle.'
+        ),
+    },
+  };
+}
+
+/** Maintenance and repair works: work orders over the period, so no foundation-to-handover build sequence. */
+export const MAINTENANCE_PROGRAMME: ModelSection = {
+  ...MODEL_SECTIONS.programme,
+  brief:
+    'A month-by-month plan for this maintenance / repair contract. Write exactly one line per month, from "Month 1:" ' +
+    'to "Month {completionMonths}:", each listing the maintenance or repair activities the tender names, taken up as ' +
+    'the department issues work orders, with mobilisation in Month 1 and any monsoon-sensitive work (roofing, ' +
+    'external painting, road patching) outside June to September. Do not add new construction stages (foundations, ' +
+    'RCC frame) that the tender does not name. Output only those lines.',
+  check: (content, { months }) => {
+    const plan = parseProgramme(content);
+    if (plan.size < Math.ceil((months ?? 2) / 2)) return `it plans only ${plan.size} month(s)`;
+    const invented = [...plan.values()].find(a => /\bRCC frame\b|\bsuperstructure\b|floor by floor/i.test(a));
+    return invented ? `it schedules new construction ("${invented}") in a maintenance contract` : undefined;
+  },
+};
+
+/** Roads, bridges, drains and walls: the activities the tender names in a buildable order, no building stages. */
+export const INFRASTRUCTURE_PROGRAMME: ModelSection = {
+  ...MODEL_SECTIONS.programme,
+  brief:
+    'A month-by-month work programme. Write exactly one line per month, from "Month 1:" to "Month {completionMonths}:", ' +
+    'each listing only activities the tender itself names, in the order they can be built, with mobilisation in ' +
+    'Month 1, work affected by rain kept outside June to September, and testing and handover only in the last ' +
+    'month. Do not add building stages (RCC frame, masonry, flooring) or road layers the tender does not name. ' +
+    'Output only those lines.',
+  check: (content, { months }) => {
+    const plan = parseProgramme(content);
+    if (plan.size < Math.ceil((months ?? 2) / 2)) return `it plans only ${plan.size} month(s)`;
+    const invented = [...plan.values()].find(a => /\bRCC frame\b|floor by floor|\bmasonry\b|\bflooring\b/i.test(a));
+    return invented ? `it schedules building work ("${invented}") the tender does not name` : undefined;
+  },
+};
+
+/** Final order of the bid for a tender kind, mixing model-drafted sections and standard proformas. */
+function bidOrder(kind: TenderKind, worksType?: WorksType): Array<ModelSection | (typeof TEMPLATE_SECTIONS)[number]> {
+  if (kind === 'works' && worksType && worksType !== 'building') {
+    const programme = worksType === 'maintenance' ? MAINTENANCE_PROGRAMME : INFRASTRUCTURE_PROGRAMME;
+    return BID_ORDER.map(section => (section === MODEL_SECTIONS.programme ? programme : section));
+  }
+  const sections = sectionsFor(kind);
+  const template = (id: string) => TEMPLATE_SECTIONS.find(t => t.id === id)!;
+  return kind === 'works'
+    ? BID_ORDER
+    : [
+        sections.transmittal,
+        template('document-checklist'),
+        { ...template('declarations'), title: 'Tender Acceptance Letter and Affidavit' },
+        template('past-experience'),
+        sections.scope,
+        sections.methodology,
+        sections.compliance,
+        sections.queries,
+        template('financial-bid'),
+      ];
+}
+
+const ROLE: Record<TenderKind, string> = {
+  works: 'an Indian civil-works contractor responding to a CPWD / state PWD tender',
+  supply: 'an Indian supplier responding to a government goods tender (GeM or an e-procurement portal)',
+  services: 'an Indian service provider responding to a government services tender',
+};
+
 const EDIT_NEEDED = (problem: string) =>
   `[Edit needed: the local model's draft of this section was withheld because ${problem}. Write this section manually.]`;
 
@@ -351,8 +548,8 @@ const BID_ORDER: Array<ModelSection | (typeof TEMPLATE_SECTIONS)[number]> = [
   TEMPLATE_SECTIONS.find(t => t.id === 'financial-bid')!,
 ];
 
-const SYSTEM_PROMPT =
-  'You draft bid documents for an Indian civil-works contractor responding to a CPWD / state PWD tender ' +
+const systemPrompt = (kind: TenderKind) =>
+  `You draft bid documents for ${ROLE[kind]} ` +
   'under the two-bid system (Cover I technical, Cover II financial). ' +
   'Use only the facts in the tender analysis, tender text and company profile provided. ' +
   'Copy figures that appear there (EMD, estimated cost, periods, percentages, clause numbers) exactly. ' +
@@ -361,20 +558,21 @@ const SYSTEM_PROMPT =
   'Never add commitments beyond the tender conditions, and never state acceptance of risks or of clauses the tender lacks. ' +
   'Never state that the bidder has any experience, completed works, turnover, profit, solvency or bid capacity ' +
   'unless it is in the company profile; a false eligibility declaration gets a bid rejected and the contractor debarred. ' +
-  'Do not write dates; use [dd/mm/yyyy]. ' +
+  'Do not write calendar dates; use [dd/mm/yyyy]. For a period the text does not give, write [insert period]. ' +
   'Write in formal English, ready for the contractor to edit. Output only the section body, without a heading.';
 
 export class BidModelUnavailableError extends Error {}
 
-function buildKeyFigures(report: IntelligenceReport, nitRef: string): string {
+function buildKeyFigures(report: IntelligenceReport, nitRef: string, kind: TenderKind): string {
   const { metadata } = report.summary;
+  const period = kind === 'works' ? 'Completion period' : kind === 'supply' ? 'Delivery period' : 'Contract period';
   return [
     'KEY FIGURES (copy exactly):',
     `- NIT reference: ${nitRef}`,
-    `- Name of work: ${metadata.tenderTitle}`,
+    `- Name of ${KIND_NOUN[kind]}: ${metadata.nameOfWork ?? metadata.tenderTitle}`,
     `- Estimated cost: ${metadata.estimatedCost ?? '[insert value]'}`,
     `- EMD: ${metadata.emdAmount ?? '[insert value]'}`,
-    `- Completion period: ${metadata.completionMonths ? `${metadata.completionMonths} months` : '[insert period]'}`,
+    `- ${period}: ${metadata.completionMonths ? `${metadata.completionMonths} months` : '[insert period]'}`,
   ].join('\n');
 }
 
@@ -410,25 +608,30 @@ export async function generateFoundationBid(
   }
 
   const tenderId = report.summary.metadata.tenderId;
-  const tenderTitle = report.summary.metadata.tenderTitle;
+  // The name of work as the NIT prints it beats whatever label the tender was uploaded under.
+  const tenderTitle = report.summary.metadata.nameOfWork ?? report.summary.metadata.tenderTitle;
   const months = report.summary.metadata.completionMonths;
   // The internal tenderId never goes into the bid; only the reference printed on the NIT does.
   const nitRef = report.summary.metadata.nitReference ?? '[NIT No.]';
-  const keyFigures = buildKeyFigures(report, nitRef);
+  const kind: TenderKind = report.summary.metadata.tenderKind ?? 'works';
+  const keyFigures = buildKeyFigures(report, nitRef, kind);
   const facts: DraftFacts = {
     months,
     emdAmount: report.summary.metadata.emdAmount,
     clauses: report.summary.eligibilityAndClauses ?? '',
     delayCompensation: report.summary.metadata.delayCompensation,
     invitingOffice: report.summary.metadata.invitingOffice,
-    hasRoad: /\broad\b/i.test(`${report.summary.technicalScope} ${report.summary.executiveSummary}`),
+    hasRoad: kind === 'works' && /\broad\b/i.test(`${report.summary.technicalScope} ${report.summary.executiveSummary}`),
     keyTerms: report.summary.metadata.keyTerms,
     sourceText: report.summary.sourceText,
-    isCodes: isCodesIn(
-      [report.summary.sourceText, report.summary.technicalScope, report.summary.eligibilityAndClauses].join('\n')
-    ),
+    // Codes found anywhere in the tender at analysis time; older reports only have the excerpt and summaries.
+    isCodes: new Set([
+      ...(report.summary.metadata.standards?.isCodes ?? []),
+      ...isCodesIn([report.summary.sourceText, report.summary.technicalScope, report.summary.eligibilityAndClauses].join('\n')),
+    ]),
     nitRef,
     tenderTitle,
+    kind,
     pan: company.panNumber,
     gstin: company.gstin,
   };
@@ -436,15 +639,20 @@ export async function generateFoundationBid(
   const sourceExcerpt = report.summary.sourceText ? `\n\nTENDER TEXT (selected extracts):\n${report.summary.sourceText}` : '';
   const sections: BidSection[] = [];
   // Sequential: a local Ollama serves one generation at a time.
-  for (const section of BID_ORDER) {
+  const tenderText = [report.summary.sourceText, report.summary.technicalScope, report.summary.eligibilityAndClauses].join('\n');
+  for (const section of bidOrder(kind, report.summary.metadata.worksType)) {
     if ('render' in section) {
       const { render, ...meta } = section;
-      sections.push({ ...meta, content: render({ nitRef, tenderTitle, company }) });
+      sections.push({ ...meta, content: render({ nitRef, tenderTitle, company, kind }) });
       continue;
     }
     const { id, title, cover, brief, needsSource, maxTokens, finish } = section;
     const meta = { id, title, cover };
-    const task = `Write the "${section.title}" section of the bid for ${company.legalName}. ${brief.replace(
+    const fitted = fitBriefToTender(brief, tenderText).replace(
+      '{methodItems}',
+      methodologyItems(`${tenderTitle}\n${tenderText}`, report.summary.metadata.worksType, tenderTitle)
+    );
+    const task = `Write the "${section.title}" section of the bid for ${company.legalName}. ${fitted.replace(
       '{completionMonths}',
       String(months ?? 'N (the completion period in the tender)')
     )}`;
@@ -456,7 +664,7 @@ export async function generateFoundationBid(
     for (const temperature of [0.3, 0.1]) {
       const response = await generateWithLlm({
         model,
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: systemPrompt(kind),
         userPrompt,
         inferenceOptions: { temperature, max_tokens: maxTokens ?? 900 },
       });
@@ -466,7 +674,10 @@ export async function generateFoundationBid(
       if (!problem) break;
       console.warn(`[bid] ${id} draft rejected at temperature ${temperature}: ${problem}\n${content}`);
     }
-    if (!problem) content = redactUnknownStandards(content, facts.isCodes ?? new Set());
+    if (!problem) {
+      content = redactUnknownStandards(content, facts.isCodes ?? new Set());
+      content = redactUnknownGrades(content, new Set([...(report.summary.metadata.standards?.grades ?? []), ...gradesIn(tenderText)]));
+    }
     sections.push({
       ...meta,
       source: 'model',
