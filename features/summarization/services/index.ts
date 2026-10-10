@@ -9,6 +9,7 @@ export {
   extractChapters,
   cleanText,
   estimateTokenCount,
+  UnreadableDocumentError,
 } from './textExtractor';
 export {
   summarizeTenderFromFile,

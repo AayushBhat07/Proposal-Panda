@@ -16,7 +16,9 @@ import {
   SCHEDULE_WISE_EMD,
   pickChunks,
   selectSourceText,
+  TenderSummarizationService,
 } from '../features/summarization/services/summarizer';
+import { UnreadableDocumentError } from '../features/summarization/services/textExtractor';
 
 test('finds the NIT reference as printed', () => {
   assert.equal(findNitReference('CPWD\nNIT No. 14/EE/PCD-II/2026-27 for construction of'), '14/EE/PCD-II/2026-27');
@@ -210,4 +212,20 @@ test('tells building, infrastructure and maintenance works apart', () => {
   assert.equal(findWorksType('Raising of boundry wall height by cocertiana coil and miscellaneous work at Residential Complex, AIIMS Raipur', ''), 'infrastructure');
   assert.equal(findWorksType('Carrying out minor maintenance civil works of Out reach Centre Noida', ''), 'maintenance');
   assert.equal(findWorksType(undefined, 'Construction of G+4 RCC framed quarters'), 'building');
+});
+
+test('rejects blank text before any model call', async () => {
+  const service = new TenderSummarizationService();
+  for (const fullText of ['', '   \n\t ']) {
+    await assert.rejects(
+      service.summarizeTender({ fullText, tenderId: 'EMPTY', tenderTitle: 'Empty' }),
+      UnreadableDocumentError
+    );
+  }
+});
+
+test('chunking still moves forward when the overlap is as large as the chunk', () => {
+  const service = new TenderSummarizationService({ maxTokensPerChunk: 4, overlapTokens: 8 });
+  const chunks = (service as unknown as { chunkText(text: string): unknown[] }).chunkText('a b c d e f');
+  assert.ok(chunks.length > 0 && chunks.length <= 6);
 });

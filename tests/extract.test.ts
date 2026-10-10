@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
-import { extractPdfText } from '../features/summarization/services/textExtractor';
+import { extractPdfText, extractTextFromDocx, UnreadableDocumentError } from '../features/summarization/services/textExtractor';
 import { findEmdAmount, findNitReference } from '../features/summarization/services/summarizer';
 
 test('keeps the line breaks of a text PDF so label-value rows stay readable', async () => {
@@ -23,4 +23,13 @@ test('keeps the line breaks of a text PDF so label-value rows stay readable', as
   assert.match(text, /\n\nSecond page$/);
   assert.equal(findNitReference(text), '50/Civil/D1/2026-27');
   assert.equal(findEmdAmount(text), 'Rs. 33446');
+});
+
+test('rejects a .docx with no readable text instead of summarising nothing', async () => {
+  const { Document, Packer, Paragraph } = await import('docx');
+  const doc = new Document({ sections: [{ children: [new Paragraph('')] }] });
+  const file = join(mkdtempSync(join(tmpdir(), 'docx-test-')), 'empty.docx');
+  writeFileSync(file, await Packer.toBuffer(doc));
+
+  await assert.rejects(extractTextFromDocx(file), UnreadableDocumentError);
 });

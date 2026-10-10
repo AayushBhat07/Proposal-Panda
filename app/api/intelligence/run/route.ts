@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import { tmpdir } from 'os';
 import { requirePermission } from '@/lib/auth/server';
 import { executeIntelligencePipeline } from '@/features/intelligence-orchestrator';
+import { UnreadableDocumentError } from '@/features/summarization/services/textExtractor';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator';
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -26,19 +27,19 @@ export async function POST(request: NextRequest) {
     if (!formData) {
       return NextResponse.json({ error: 'Expected a multipart form upload.' }, { status: 400 });
     }
-    const file = formData.get('file') as File | null;
-    const tenderId = formData.get('tenderId') as string | null;
-    const tenderTitle = formData.get('tenderTitle') as string | null;
+    const file = formData.get('file');
+    const tenderId = formData.get('tenderId');
+    const tenderTitle = formData.get('tenderTitle');
 
-    // Validate required fields
-    if (!file) {
+    // Validate required fields; a text field named "file" is not an upload
+    if (!(file instanceof File)) {
       return NextResponse.json(
         { error: 'No file provided. Please upload a tender document.' },
         { status: 400 }
       );
     }
 
-    if (!tenderId || !tenderTitle) {
+    if (typeof tenderId !== 'string' || typeof tenderTitle !== 'string' || !tenderId.trim() || !tenderTitle.trim()) {
       return NextResponse.json(
         { error: 'Missing tender metadata (tenderId or tenderTitle).' },
         { status: 400 }
@@ -102,13 +103,15 @@ export async function POST(request: NextRequest) {
       await unlink(tempFilePath).catch(() => {});
     }
 
+    if (error instanceof UnreadableDocumentError) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
+
+    // Internal details stay in the server log, not the response.
     console.error('[API] Intelligence pipeline error:', error);
 
     return NextResponse.json(
-      { 
-        error: 'Failed to process tender document. Please try again.',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Failed to process tender document. Please try again.' },
       { status: 500 }
     );
   }
