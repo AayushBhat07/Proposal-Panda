@@ -10,10 +10,12 @@ import { LogOut } from 'lucide-react';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { useAuthStore } from '@/state/authStore';
 import { ROLE_LABELS, type Permission } from '@/lib/auth/rbac';
+import { announceLogout, useVaultStore } from '@/lib/vault/vaultStore';
 
 // Only pages that exist; each is shown only to roles that can open it.
 const NAV_ITEMS: Array<{ label: string; href: string; permission?: Permission }> = [
   { label: 'Register', href: '/dashboard' },
+  { label: 'Vault', href: '/vault', permission: 'vault.use' },
 ];
 
 export default function TopBar() {
@@ -21,8 +23,11 @@ export default function TopBar() {
   const router = useRouter();
   const { companyProfile } = useOnboarding();
   const { user, can, logout } = useAuthStore();
+  const lockVault = useVaultStore(state => state.lock);
 
   const handleLogout = async () => {
+    lockVault();
+    announceLogout();
     await logout();
     router.replace('/login');
   };
@@ -35,7 +40,7 @@ export default function TopBar() {
 
       <nav aria-label="Main" className="flex flex-1 flex-wrap gap-6">
         {NAV_ITEMS.filter(item => !item.permission || can(item.permission)).map(item => {
-          const isActive = pathname === item.href || pathname.startsWith('/tenders');
+          const isActive = pathname === item.href || (item.href === '/dashboard' && pathname.startsWith('/tenders'));
           return (
             <Link
               key={item.href}

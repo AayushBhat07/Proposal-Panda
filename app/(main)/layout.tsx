@@ -11,11 +11,18 @@ import TopBar from '@/components/dashboard/TopBar';
 import Spinner from '@/components/ui/Spinner';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { scrubStoredBids } from '@/lib/vault/bidVault';
 
 export default function MainLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { isComplete, isLoaded } = useOnboarding();
+  const { isComplete, isLoaded, companyProfile } = useOnboarding();
   const { isAuthenticated, isLoading } = useAuth();
+
+  // Bids saved before the vault existed hold the real GSTIN and PAN; swap them for tokens on every load
+  // until the profile's copy is moved into the vault.
+  useEffect(() => {
+    if (companyProfile) scrubStoredBids(companyProfile);
+  }, [companyProfile]);
 
   useEffect(() => {
     if (isLoading || !isLoaded) return;
