@@ -184,12 +184,18 @@ function sentencesOf(text: string): string[] {
 
 type QuotedTerm = { label: string; term: RegExp; prefer: RegExp; also?: RegExp };
 
+/** A table of contents row: several page ranges ("3-5 … 12-13 … 26-27"), never a clause. */
+const isContentsRow = (s: string) => (s.match(/\b\d{1,3}-\d{1,3}\b/g)?.length ?? 0) >= 3;
+/** Where the next numbered heading starts ("4.0 Special Conditions"), so a quote doesn't run into it. */
+const NEXT_HEADING = /\s\d{1,2}\.\d{1,2}\s+(?=[A-Z][a-z])/;
+
 function quoteTerms(text: string, terms: QuotedTerm[]): Array<{ label: string; text: string }> {
   const sentences = sentencesOf(text);
   return terms.flatMap(({ label, term, prefer, also }) => {
-    const index = sentences.findIndex(s => term.test(s) && prefer.test(s));
+    const index = sentences.findIndex(s => term.test(s) && prefer.test(s) && !isContentsRow(s));
     if (index === -1) return [];
-    let quote = sentences[index].replace(/\.?$/, '.');
+    const heading = sentences[index].search(NEXT_HEADING);
+    let quote = (heading > 40 ? sentences[index].slice(0, heading) : sentences[index]).replace(/\.?$/, '.');
     if (also && !also.test(quote) && also.test(sentences[index + 1] ?? '')) {
       quote += ` ${sentences[index + 1].replace(/\.?$/, '.')}`;
     }

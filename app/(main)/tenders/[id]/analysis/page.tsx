@@ -133,7 +133,7 @@ export default function TenderAnalysisPage() {
         <span className="font-mono text-xs tracking-widest text-muted break-all">
           {(metadata.nitReference || params.id).toUpperCase()}
         </span>
-        <h1 className="font-serif text-4xl leading-tight text-ink max-w-4xl">{metadata.tenderTitle}</h1>
+        <h1 className="font-serif text-4xl leading-tight text-balance text-ink max-w-4xl">{metadata.nameOfWork ?? metadata.tenderTitle}</h1>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink-soft">
           <span className={`px-2.5 py-1 text-xs font-medium ${RISK_CHIP[report.compliance.riskLevel]}`}>
             {report.compliance.riskLevel} risk · {report.compliance.complianceScore} / 100
@@ -146,7 +146,7 @@ export default function TenderAnalysisPage() {
       <AnalysisTabs activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === 'summary' && <SummaryPanel summary={report.summary} />}
         {activeTab === 'compliance' && <CompliancePanel compliance={report.compliance} />}
-        {activeTab === 'clauses' && <ClausesPanel />}
+        {activeTab === 'clauses' && <ClausesPanel metadata={metadata} />}
         {activeTab === 'boq' && <BOQInsightsPanel />}
         {activeTab === 'metadata' && <MetadataPanel metadata={report.metadata} />}
       </AnalysisTabs>
