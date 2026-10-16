@@ -156,7 +156,7 @@ function ItemRow({ item, total }: { item: BoqItem; total: number }) {
           {item.description}
         </p>
         <p className="font-mono text-xs text-ink-soft tabular-nums">
-          {item.quantity.toLocaleString('en-IN')} {item.unit} × {inr(item.rate)}
+          {item.quantity.toLocaleString('en-IN')} {item.unit} × ₹ {item.rate.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           {item.section && <span className="font-sans text-muted"> · {item.section}</span>}
         </p>
       </div>
