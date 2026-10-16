@@ -99,6 +99,8 @@ export interface TenderSummary {
     tenderKind?: 'works' | 'supply' | 'services';
     /** IS codes and concrete / steel grades mentioned anywhere in the tender, to check drafts against */
     standards?: { isCodes: string[]; grades: string[] };
+    /** Bid due, opening, pre-bid and query dates read from the NIT (or corrected by hand on the analysis page) */
+    keyDates?: import('../services/dates').KeyDate[];
     /** Schedules of quantities printed in the tender, read row by row; empty when the BOQ is a separate file */
     boq?: import('../services/boq').BoqPart[];
     /** Name of work / subject as printed in the NIT, if found */

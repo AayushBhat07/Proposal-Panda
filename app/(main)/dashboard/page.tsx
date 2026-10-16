@@ -15,6 +15,22 @@ import Spinner from '@/components/ui/Spinner';
 import { saveToLocalStorage, getFromLocalStorage } from '@/services/storage/mockStorageService';
 import { RISK_TEXT } from '@/components/analysis/risk';
 import type { RiskLevel } from '@/features/compliance-scoring/types/compliance.types';
+import { countdown, daysUntil, formatKeyDate, type KeyDate } from '@/features/summarization/services/dates';
+import { urgency } from '@/components/analysis/KeyDates';
+
+const bidDue = (report: StoredReport) => report.summary?.metadata?.keyDates?.find(d => d.kind === 'submission');
+const isOpen = (report: StoredReport) => {
+  const due = bidDue(report);
+  return !!due && daysUntil(due.date) >= 0;
+};
+
+/** Bids still open come first, soonest deadline on top; the rest follow, newest upload first. */
+function registerOrder(a: StoredReport, b: StoredReport): number {
+  const [openA, openB] = [isOpen(a), isOpen(b)];
+  if (openA !== openB) return openA ? -1 : 1;
+  if (openA) return bidDue(a)!.date.localeCompare(bidDue(b)!.date) || (bidDue(a)!.time ?? '').localeCompare(bidDue(b)!.time ?? '');
+  return b.uploadedAt.localeCompare(a.uploadedAt);
+}
 
 type UploadState = 'idle' | 'processing' | 'success' | 'error';
 type ProcessingStage = 'analyzing' | 'scoring' | 'finalizing';
@@ -23,7 +39,7 @@ interface StoredReport {
   id: string;
   fileName: string;
   uploadedAt: string;
-  summary?: { metadata?: { tenderTitle?: string; nitReference?: string } };
+  summary?: { metadata?: { tenderTitle?: string; nameOfWork?: string; nitReference?: string; keyDates?: KeyDate[] } };
   compliance?: { riskLevel?: RiskLevel; complianceScore?: number };
 }
 
@@ -50,7 +66,7 @@ function DashboardContent() {
   useEffect(() => {
     const stored = getFromLocalStorage<StoredReport[]>('intelligenceReports');
     const list = Array.isArray(stored) ? stored : [];
-    setReports(list.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)));
+    setReports(list.sort(registerOrder));
     setIsLoadingData(false);
   }, []);
 
@@ -112,6 +128,7 @@ function DashboardContent() {
 
   const countAt = (level: RiskLevel) => reports.filter(r => r.compliance?.riskLevel === level).length;
   const highRisk = countAt('High');
+  const dueThisWeek = reports.filter(r => isOpen(r) && daysUntil(bidDue(r)!.date) <= 7).length;
   const month = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }).toUpperCase();
 
   return (
@@ -125,7 +142,7 @@ function DashboardContent() {
               ? 'The register is empty. Upload a tender to begin.'
               : `${reports.length} ${reports.length === 1 ? 'tender' : 'tenders'} on the register${
                   highRisk ? `, ${highRisk} at high risk.` : '.'
-                }`}
+                }${dueThisWeek ? ` ${dueThisWeek} ${dueThisWeek === 1 ? 'bid is' : 'bids are'} due within a week.` : ''}`}
         </h1>
       </div>
 
@@ -194,7 +211,8 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: str
 
 function RegisterRow({ report }: { report: StoredReport }) {
   const uploaded = new Date(report.uploadedAt);
-  const title = report.summary?.metadata?.tenderTitle || report.fileName;
+  const title = report.summary?.metadata?.nameOfWork || report.summary?.metadata?.tenderTitle || report.fileName;
+  const due = bidDue(report);
   const reference = report.summary?.metadata?.nitReference || report.id;
   const risk = report.compliance?.riskLevel;
   const score = report.compliance?.complianceScore;
@@ -217,6 +235,16 @@ function RegisterRow({ report }: { report: StoredReport }) {
         <span className="font-mono text-xs text-muted break-all">
           {reference} · {report.fileName}
         </span>
+      </div>
+      <div className="flex flex-[1_1_150px] flex-col text-sm tabular-nums">
+        {due ? (
+          <>
+            <span className="text-ink-soft">Bid due {formatKeyDate(due)}</span>
+            <span className={`font-medium ${urgency(due.date)}`}>{daysUntil(due.date) < 0 ? 'Closed' : countdown(due.date)}</span>
+          </>
+        ) : (
+          <span className="text-muted">Bid due date not found</span>
+        )}
       </div>
       <div className="flex-[1_1_120px] text-sm text-ink-soft tabular-nums">
         {score !== undefined ? `${score} / 100 compliance` : 'Not scored'}

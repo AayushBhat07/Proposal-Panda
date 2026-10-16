@@ -19,7 +19,9 @@ import MetadataPanel from '@/components/analysis/MetadataPanel';
 import { RISK_CHIP } from '@/components/analysis/risk';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
-import { getFromLocalStorage } from '@/services/storage/mockStorageService';
+import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
+import KeyDates from '@/components/analysis/KeyDates';
+import type { KeyDate } from '@/features/summarization/services/dates';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator/types/orchestration.types';
 
 export default function TenderAnalysisPage() {
@@ -79,6 +81,15 @@ export default function TenderAnalysisPage() {
       }
       setIsLoading(false);
     }, 500);
+  };
+
+  // Corrigenda move dates; the corrected dates replace the ones read from the NIT in this browser's copy.
+  const handleSaveDates = (keyDates: KeyDate[]) => {
+    const stored = getFromLocalStorage<IntelligenceReport & { id: string }>('intelligenceReports', params.id);
+    if (!stored || !report) return;
+    const summary = { ...report.summary, metadata: { ...report.summary.metadata, keyDates } };
+    saveToLocalStorage('intelligenceReports', { ...stored, summary });
+    setReport({ ...report, summary });
   };
 
   const handleBackToDashboard = () => {
@@ -142,6 +153,8 @@ export default function TenderAnalysisPage() {
           <span>Analysed {new Date(report.metadata.generatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
         </div>
       </div>
+
+      <KeyDates key={JSON.stringify(metadata.keyDates ?? null)} dates={metadata.keyDates} editable={can('tender.upload')} onSave={handleSaveDates} />
 
       <AnalysisTabs activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === 'summary' && <SummaryPanel summary={report.summary} />}
