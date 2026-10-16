@@ -11,6 +11,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Download, FileStack, Lock, Paperclip, Pencil } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
+import { InlineMarkdown } from '@/components/ui/LightMarkdown';
 import { useAuthStore } from '@/state/authStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
@@ -418,7 +419,7 @@ export default function FoundationBidPage() {
                               {part.text}
                             </mark>
                           ) : (
-                            part.text
+                            <InlineMarkdown key={i} text={part.text} />
                           )
                         )}
                       </div>

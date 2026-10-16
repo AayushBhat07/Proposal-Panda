@@ -5,6 +5,7 @@
  * money and dates in the margin.
  */
 
+import LightMarkdown from '@/components/ui/LightMarkdown';
 import type { TenderSummary } from '@/features/summarization/types/summarization.types';
 
 type SectionKey = keyof Omit<TenderSummary, 'metadata' | 'sourceText'>;
@@ -37,9 +38,10 @@ export default function SummaryPanel({ summary }: { summary: TenderSummary }) {
           {MEMO.map(({ key, title }) => (
             <section key={key}>
               <h2 className="mb-2 font-serif text-xl font-semibold text-ink">{title}</h2>
-              <p className="whitespace-pre-wrap font-serif text-lg leading-relaxed text-ink">
-                {summary[key] || 'Not specified in the tender.'}
-              </p>
+              <LightMarkdown
+                text={summary[key] || 'Not specified in the tender.'}
+                className="font-serif text-lg leading-relaxed text-ink"
+              />
             </section>
           ))}
           {modelUsed && <p className="text-sm text-muted">Summarised by {modelUsed}</p>}
@@ -50,9 +52,10 @@ export default function SummaryPanel({ summary }: { summary: TenderSummary }) {
               <h2 className="mb-2 border-b border-dotted border-rule-strong pb-2 font-mono text-xs font-medium tracking-widest text-muted">
                 {title}
               </h2>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">
-                {summary[key] || 'Not specified in the tender.'}
-              </p>
+              <LightMarkdown
+                text={summary[key] || 'Not specified in the tender.'}
+                className="text-sm leading-relaxed text-ink-soft"
+              />
             </section>
           ))}
         </aside>
