@@ -222,7 +222,7 @@ export default function FoundationBidPage() {
     return (
       <div className="mx-auto max-w-xl px-4 py-24 text-center flex flex-col items-center gap-4">
         <p className="font-serif text-2xl text-ink">This tender hasn&apos;t been analysed in this browser yet.</p>
-        <Button variant="outline" onClick={() => router.push('/dashboard')}>
+        <Button variant="outline" onClick={() => router.push('/register')}>
           Back to the register
         </Button>
       </div>

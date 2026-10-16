@@ -1,257 +1,359 @@
 'use client';
 
 /**
- * Dashboard: the tender register (every analysed tender, newest first) and the upload that adds to it.
+ * Dashboard: what is due, what needs doing this week, where every bid stands, how much earnest money is out,
+ * and whether the company qualifies. Built from the tenders, bids and company file kept in this browser.
  */
 
-import { Suspense, useState, useEffect } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuthStore } from '@/state/authStore';
-import TenderUpload from '@/components/dashboard/TenderUpload';
-import ProcessingState from '@/components/dashboard/ProcessingState';
-import Button from '@/components/ui/Button';
+import { ArrowRight } from 'lucide-react';
 import Spinner from '@/components/ui/Spinner';
-import { saveToLocalStorage, getFromLocalStorage } from '@/services/storage/mockStorageService';
-import { RISK_TEXT } from '@/components/analysis/risk';
-import type { RiskLevel } from '@/features/compliance-scoring/types/compliance.types';
-import { countdown, daysUntil, formatKeyDate, type KeyDate } from '@/features/summarization/services/dates';
+import { useAuthStore } from '@/state/authStore';
+import { useOnboarding } from '@/lib/context/OnboardingContext';
+import { getAllFromLocalStorage, getFromLocalStorage, setLocalStorage } from '@/services/storage/mockStorageService';
 import { urgency } from '@/components/analysis/KeyDates';
+import { RISK_CHIP } from '@/components/analysis/risk';
+import { countdown, daysUntil, formatKeyDate, KEY_DATE_LABELS, type KeyDateKind } from '@/features/summarization/services/dates';
+import { eligibilitySummary } from '@/lib/company/eligibility';
+import {
+  attention,
+  buildPipeline,
+  calendar,
+  isOpenStage,
+  MANUAL_STAGES,
+  shortTitle,
+  STAGE_LABELS,
+  totals,
+  type PipelineEntry,
+  type Stage,
+  type StoredBid,
+  type StoredReport,
+} from '@/lib/tenders/pipeline';
 
-const bidDue = (report: StoredReport) => report.summary?.metadata?.keyDates?.find(d => d.kind === 'submission');
-const isOpen = (report: StoredReport) => {
-  const due = bidDue(report);
-  return !!due && daysUntil(due.date) >= 0;
+const crore = (rupees: number) => `₹ ${(rupees / 1e7).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })} cr`;
+/** Lakh below a crore, crore above. */
+const lakh = (rupees: number) =>
+  rupees >= 1e7 ? crore(rupees) : `₹ ${(rupees / 1e5).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })} L`;
+
+const STAGE_CHIP: Record<Stage, string> = {
+  analysed: 'bg-rule/60 text-ink-soft',
+  drafting: 'bg-ochre-tint text-ochre',
+  ready: 'bg-forest-tint text-forest',
+  submitted: 'bg-rule text-ink',
+  won: 'bg-forest text-paper',
+  lost: 'bg-seal-tint text-seal',
+  skipped: 'bg-rule/60 text-muted',
 };
-
-/** Bids still open come first, soonest deadline on top; the rest follow, newest upload first. */
-function registerOrder(a: StoredReport, b: StoredReport): number {
-  const [openA, openB] = [isOpen(a), isOpen(b)];
-  if (openA !== openB) return openA ? -1 : 1;
-  if (openA) return bidDue(a)!.date.localeCompare(bidDue(b)!.date) || (bidDue(a)!.time ?? '').localeCompare(bidDue(b)!.time ?? '');
-  return b.uploadedAt.localeCompare(a.uploadedAt);
-}
-
-type UploadState = 'idle' | 'processing' | 'success' | 'error';
-type ProcessingStage = 'analyzing' | 'scoring' | 'finalizing';
-
-interface StoredReport {
-  id: string;
-  fileName: string;
-  uploadedAt: string;
-  summary?: { metadata?: { tenderTitle?: string; nameOfWork?: string; nitReference?: string; keyDates?: KeyDate[] } };
-  compliance?: { riskLevel?: RiskLevel; complianceScore?: number };
-}
+const EVENT_TONE: Record<KeyDateKind, string> = { submission: 'bg-seal', preBid: 'bg-ochre', queries: 'bg-ochre', opening: 'bg-forest' };
+const ELIGIBLE_TEXT = { yes: 'text-forest', no: 'text-seal', check: 'text-ochre' } as const;
 
 export default function DashboardPage() {
-  return (
-    <Suspense>
-      <DashboardContent />
-    </Suspense>
-  );
-}
-
-function DashboardContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const deniedPath = searchParams.get('denied');
+  const { companyProfile } = useOnboarding();
   const { can } = useAuthStore();
-  const [reports, setReports] = useState<StoredReport[]>([]);
-  const [uploadState, setUploadState] = useState<UploadState>('idle');
-  const [processingStage, setProcessingStage] = useState<ProcessingStage>('analyzing');
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [data, setData] = useState<{ reports: StoredReport[]; bids: StoredBid[]; stages: Record<string, Stage> } | null>(null);
 
   useEffect(() => {
-    const stored = getFromLocalStorage<StoredReport[]>('intelligenceReports');
-    const list = Array.isArray(stored) ? stored : [];
-    setReports(list.sort(registerOrder));
-    setIsLoadingData(false);
+    // localStorage is only readable after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setData({
+      reports: getAllFromLocalStorage<StoredReport>('intelligenceReports'),
+      bids: getAllFromLocalStorage<StoredBid>('foundationBids'),
+      stages: getFromLocalStorage<Record<string, Stage>>('tenderStages') ?? {},
+    });
   }, []);
 
-  const handleFileUpload = async (file: File) => {
-    try {
-      setUploadedFile(file);
-      setUploadState('processing');
-      setProcessingStage('analyzing');
-      setErrorMessage(null);
+  const pipeline = useMemo(() => (data ? buildPipeline(data.reports, data.bids, data.stages, companyProfile) : []), [data, companyProfile]);
 
-      const tenderId = `TENDER-${Date.now()}`;
-      const tenderTitle = file.name.replace(/\.(pdf|docx)$/i, '');
+  if (!data) return <Spinner size="lg" className="mt-24 text-forest" />;
 
-      // Run the analysis pipeline (text extraction → local-model summary → compliance scoring)
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('tenderId', tenderId);
-      formData.append('tenderTitle', tenderTitle);
-
-      // The stage indicator can't see inside the pipeline, so advance it on a timer.
-      const scoringTimer = setTimeout(() => setProcessingStage('scoring'), 4000);
-      const response = await fetch('/api/intelligence/run', { method: 'POST', body: formData });
-      clearTimeout(scoringTimer);
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to process tender document.');
-      }
-      setProcessingStage('finalizing');
-
-      const saved = saveToLocalStorage('intelligenceReports', {
-        id: tenderId,
-        fileName: file.name,
-        uploadedAt: new Date().toISOString(),
-        ...data,
-      });
-      if (!saved) {
-        throw new Error(
-          'The analysis finished but could not be saved in this browser. Browser storage may be full or blocked; free some space and try again.'
-        );
-      }
-      localStorage.setItem('tender-app-latestTenderId', tenderId);
-
-      setUploadState('success');
-      router.push(`/tenders/${tenderId}/analysis`);
-    } catch (error) {
-      console.error('Processing error:', error);
-      setUploadState('error');
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to process tender document. Please try again.'
-      );
-    }
+  const setStage = (id: string, stage: Stage | '') => {
+    const stages = { ...data.stages };
+    if (stage) stages[id] = stage;
+    else delete stages[id];
+    setLocalStorage('tenderStages', stages);
+    setData({ ...data, stages });
   };
 
-  const handleRetryUpload = () => {
-    setUploadState('idle');
-    setUploadedFile(null);
-    setErrorMessage(null);
-  };
-
-  const countAt = (level: RiskLevel) => reports.filter(r => r.compliance?.riskLevel === level).length;
-  const highRisk = countAt('High');
-  const dueThisWeek = reports.filter(r => isOpen(r) && daysUntil(bidDue(r)!.date) <= 7).length;
-  const month = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }).toUpperCase();
+  const sum = totals(pipeline);
+  const todo = attention(pipeline, companyProfile);
+  const { days, events } = calendar(pipeline);
+  const closing = pipeline.filter(e => isOpenStage(e.stage) && e.due && daysUntil(e.due.date) >= 0 && daysUntil(e.due.date) <= 10);
+  const unfinished = closing.filter(e => e.stage !== 'ready').length;
+  const featured = pipeline.find(e => isOpenStage(e.stage) && e.eligibility);
+  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-8 lg:px-14 pt-10 pb-16 flex flex-col gap-9">
-      <div className="flex flex-col gap-2 max-w-3xl">
-        <span className="font-mono text-xs tracking-widest text-muted">TENDER REGISTER · {month}</span>
-        <h1 className="font-serif text-4xl leading-tight text-ink">
-          {isLoadingData
-            ? 'Loading the register…'
-            : reports.length === 0
-              ? 'The register is empty. Upload a tender to begin.'
-              : `${reports.length} ${reports.length === 1 ? 'tender' : 'tenders'} on the register${
-                  highRisk ? `, ${highRisk} at high risk.` : '.'
-                }${dueThisWeek ? ` ${dueThisWeek} ${dueThisWeek === 1 ? 'bid is' : 'bids are'} due within a week.` : ''}`}
+    <div className="mx-auto flex max-w-7xl flex-col gap-9 px-4 pt-10 pb-20 sm:px-8 lg:px-14">
+      <div className="flex flex-col gap-2">
+        <span className="font-mono text-xs tracking-widest text-muted">{today}</span>
+        <h1 className="max-w-4xl font-serif text-4xl leading-tight text-balance text-ink">
+          {pipeline.length === 0 ? (
+            'No tenders yet. Upload one on the register to start.'
+          ) : closing.length === 0 ? (
+            'Nothing closes in the next 10 days.'
+          ) : (
+            <>
+              {closing.length === 1 ? 'One bid closes' : `${spell(closing.length)} bids close`} in the next 10 days.{' '}
+              {unfinished > 0 && <span className="text-seal">{unfinished === closing.length ? (unfinished === 1 ? 'It is not ready yet.' : 'None are ready yet.') : `${spell(unfinished)} still ${unfinished === 1 ? 'needs' : 'need'} work.`}</span>}
+            </>
+          )}
         </h1>
       </div>
 
-      {deniedPath && (
-        <p role="alert" className="border-l-2 border-seal bg-seal-tint px-4 py-3 text-sm text-seal">
-          Your role can&apos;t open {deniedPath}.
-        </p>
-      )}
-
-      {reports.length > 0 && (
-        <dl className="grid grid-cols-2 sm:grid-cols-4 border-t border-ink border-b border-b-rule">
-          <Stat label="Analysed" value={reports.length} />
-          <Stat label="Low risk" value={countAt('Low')} />
-          <Stat label="Medium risk" value={countAt('Medium')} />
-          <Stat label="High risk" value={highRisk} tone={highRisk ? 'text-seal' : undefined} />
-        </dl>
-      )}
-
-      <section aria-labelledby="upload-heading" className="flex flex-col gap-4">
-        <h2 id="upload-heading" className="font-mono text-xs tracking-widest text-muted">
-          ADD A TENDER
-        </h2>
-        {!can('tender.upload') && (
-          <p className="text-sm text-ink-soft">Your role can read analysed tenders but not upload new ones.</p>
-        )}
-        {can('tender.upload') && uploadState === 'idle' && <TenderUpload onUpload={handleFileUpload} />}
-        {uploadState === 'processing' && uploadedFile && (
-          <ProcessingState fileName={uploadedFile.name} stage={processingStage} />
-        )}
-        {uploadState === 'success' && (
-          <p className="border border-rule-strong bg-sheet p-8 text-center text-ink">
-            Analysis complete. Opening the report…
-          </p>
-        )}
-        {uploadState === 'error' && (
-          <div className="border border-seal/40 bg-seal-tint p-8 flex flex-col items-center gap-3 text-center">
-            <p className="font-serif text-xl text-seal">The tender couldn&apos;t be analysed</p>
-            <p className="text-sm text-ink-soft">{errorMessage || 'Please try again.'}</p>
-            <Button onClick={handleRetryUpload}>Try again</Button>
-          </div>
-        )}
-      </section>
-
-      <section aria-labelledby="register-heading" className="flex flex-col">
-        <h2 id="register-heading" className="sr-only">
-          Analysed tenders
-        </h2>
-        {isLoadingData ? (
-          <Spinner size="md" className="text-forest" />
-        ) : (
-          reports.map(report => <RegisterRow key={report.id} report={report} />)
-        )}
-      </section>
-    </div>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
-  return (
-    <div className="py-4 flex flex-col gap-1">
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className={`font-serif text-3xl ${tone ?? 'text-ink'}`}>{value}</dd>
-    </div>
-  );
-}
-
-function RegisterRow({ report }: { report: StoredReport }) {
-  const uploaded = new Date(report.uploadedAt);
-  const title = report.summary?.metadata?.nameOfWork || report.summary?.metadata?.tenderTitle || report.fileName;
-  const due = bidDue(report);
-  const reference = report.summary?.metadata?.nitReference || report.id;
-  const risk = report.compliance?.riskLevel;
-  const score = report.compliance?.complianceScore;
-
-  return (
-    <article className="flex flex-wrap items-baseline gap-x-7 gap-y-3 border-b border-rule py-6">
-      <div className="flex w-16 flex-none flex-col">
-        <span className="font-serif text-3xl leading-none">{uploaded.toLocaleDateString('en-IN', { day: '2-digit' })}</span>
-        <span className="mt-1 font-mono text-xs text-muted">
-          {uploaded.toLocaleDateString('en-IN', { month: 'short' }).toUpperCase()}
-        </span>
-      </div>
-      <div className="flex min-w-0 flex-[999_1_380px] flex-col gap-1.5">
-        <Link
-          href={`/tenders/${report.id}/analysis`}
-          className="font-serif text-xl leading-snug text-ink hover:text-forest"
-        >
-          {title}
+      {pipeline.length === 0 ? (
+        <Link href="/register" className="inline-flex items-center gap-2 self-start text-forest underline">
+          Go to the register <ArrowRight className="h-4 w-4" aria-hidden />
         </Link>
-        <span className="font-mono text-xs text-muted break-all">
-          {reference} · {report.fileName}
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 border-t border-b border-t-ink border-b-rule sm:grid-cols-3 lg:grid-cols-5">
+            <Stat label="Due in 7 days" value={String(sum.dueThisWeek.length)} note={sum.dueThisWeek.map(e => shortTitle(e.title)).join(', ') || 'Nothing due'} />
+            <Stat label="In drafting" value={String(sum.drafting.length)} note={sum.drafting.length ? `${sum.blanks} blanks left across bids` : 'No drafts open'} />
+            <Stat label="EMD to deposit" value={lakh(sum.emdToDeposit)} note="For open bids you qualify for" />
+            <Stat label="EMD with departments" value={lakh(sum.emdLocked)} note={sum.emdDueBack ? `${lakh(sum.emdDueBack)} due back on lost bids` : 'On submitted bids'} />
+            <Stat
+              label="Win rate"
+              value={sum.won + sum.lost ? `${Math.round((sum.won / (sum.won + sum.lost)) * 100)}%` : '—'}
+              note={sum.won + sum.lost ? `${sum.won} of ${sum.won + sum.lost} decided bids awarded` : `${sum.submitted} submitted, none decided yet`}
+            />
+          </dl>
+
+          <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="flex min-w-0 flex-col gap-10">
+              <Section title="Bid pipeline">
+                <div className="overflow-x-auto border border-rule-strong bg-sheet">
+                  <table className="w-full min-w-[680px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-ink text-left font-mono text-[11px] tracking-widest text-muted uppercase">
+                        <th scope="col" className="px-4 py-3 font-medium">Tender</th>
+                        <th scope="col" className="px-3 py-3 font-medium">Stage</th>
+                        <th scope="col" className="px-3 py-3 font-medium">Bid due</th>
+                        <th scope="col" className="px-3 py-3 text-right font-medium">Estimated cost</th>
+                        <th scope="col" className="px-4 py-3 font-medium">You qualify?</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pipeline.map(e => (
+                        <PipelineRow key={e.id} entry={e} canEdit={can('tender.upload')} onStage={stage => setStage(e.id, stage)} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Section>
+
+              <Section title="Deadlines, next five weeks">
+                <div className="border border-rule-strong bg-sheet p-4">
+                  <div className="grid grid-cols-7 gap-px bg-rule" role="grid" aria-label="Calendar of tender dates">
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+                      <div key={d} role="columnheader" className="bg-paper py-1.5 text-center font-mono text-[11px] tracking-widest text-muted uppercase">
+                        {d}
+                      </div>
+                    ))}
+                    {days.map(day => {
+                      const isToday = daysUntil(day) === 0;
+                      const dayEvents = events.filter(ev => ev.date === day);
+                      return (
+                        <div key={day} role="gridcell" className={`min-h-20 bg-sheet p-1.5 ${isToday ? 'outline-2 -outline-offset-2 outline-ink' : ''} ${daysUntil(day) < 0 ? 'opacity-60' : ''}`}>
+                          <span className={`font-mono text-[11px] ${isToday ? 'font-medium text-ink' : 'text-muted'}`}>
+                            {Number(day.slice(8))}
+                            {Number(day.slice(8)) === 1 && ` ${new Date(`${day}T00:00:00Z`).toLocaleDateString('en-IN', { month: 'short', timeZone: 'UTC' })}`}
+                            {isToday && ' · today'}
+                          </span>
+                          {dayEvents.map(ev => (
+                            <Link
+                              key={`${ev.id}-${ev.kind}`}
+                              href={`/tenders/${ev.id}/analysis`}
+                              title={`${KEY_DATE_LABELS[ev.kind]}: ${ev.label}`}
+                              className={`mt-1 block truncate px-1 py-0.5 text-[11px] leading-tight font-medium text-paper ${EVENT_TONE[ev.kind]}`}
+                            >
+                              {KEY_DATE_LABELS[ev.kind]} · {ev.label}
+                            </Link>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-4 text-xs text-ink-soft">
+                    <Legend tone="bg-seal" label="Bid due" />
+                    <Legend tone="bg-ochre" label="Pre-bid meeting or queries" />
+                    <Legend tone="bg-forest" label="Bid opening" />
+                  </div>
+                </div>
+              </Section>
+            </div>
+
+            <aside className="flex flex-col gap-10">
+              <Section title="Needs you this week">
+                {todo.length === 0 ? (
+                  <p className="text-sm text-ink-soft">Nothing needs you this week.</p>
+                ) : (
+                  <ul className="border border-rule-strong bg-sheet">
+                    {todo.slice(0, 8).map(item => (
+                      <li key={item.id} className="border-b border-dotted border-rule-strong last:border-0">
+                        <Link href={item.href} className="flex gap-3 px-4 py-3 hover:bg-paper">
+                          <span aria-hidden className={`mt-2 h-2 w-2 flex-none rounded-full ${item.tone === 'urgent' ? 'bg-seal' : item.tone === 'soon' ? 'bg-ochre' : 'bg-forest'}`} />
+                          <span className="flex flex-col">
+                            <span className="text-sm text-ink">{item.text}</span>
+                            <span className="text-xs text-muted">{item.note}</span>
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
+
+              <Section title="Earnest money">
+                <EmdList pipeline={pipeline} />
+              </Section>
+
+              {featured?.eligibility && (
+                <Section title={featured.eligibility.verdict === 'yes' ? 'Why you qualify' : 'Can you bid?'}>
+                  <Link href={`/tenders/${featured.id}/analysis`} className="-mt-2 text-sm text-ink-soft hover:text-forest">
+                    {shortTitle(featured.title, 60)}, bid due {featured.due ? formatKeyDate(featured.due) : 'date not set'}
+                  </Link>
+                  <div className="border border-rule-strong bg-sheet px-4 py-2">
+                    {featured.eligibility.checks.map(c => (
+                      <div key={c.label} className="flex justify-between gap-4 border-b border-dotted border-rule-strong py-2.5 text-sm last:border-0">
+                        <span className="flex flex-col">
+                          <span className="text-ink">{c.label}</span>
+                          <span className="text-xs text-muted">{c.need}</span>
+                        </span>
+                        <span className={`flex-none text-right font-medium ${c.result === 'pass' ? 'text-forest' : c.result === 'fail' ? 'text-seal' : 'text-ochre'}`}>
+                          {c.result === 'pass' ? '✓ ' : c.result === 'fail' ? '✗ ' : '? '}
+                          {c.detail}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-muted">
+                    Standard CPWD criteria from your company file. The NIT can set different figures; check its eligibility clause.
+                  </p>
+                </Section>
+              )}
+            </aside>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PipelineRow({ entry: e, canEdit, onStage }: { entry: PipelineEntry; canEdit: boolean; onStage: (stage: Stage | '') => void }) {
+  const days = e.due ? daysUntil(e.due.date) : undefined;
+  return (
+    <tr className="border-b border-dotted border-rule-strong align-top last:border-0">
+      <td className="min-w-56 px-4 py-3.5">
+        <Link href={`/tenders/${e.id}/analysis`} className="font-serif text-base leading-snug text-ink hover:text-forest">
+          {e.title}
+        </Link>
+        <div className="mt-0.5 font-mono text-[11px] break-all text-muted">{e.reference}</div>
+        {e.risk && <span className={`mt-1.5 inline-block px-1.5 py-0.5 text-[11px] font-medium ${RISK_CHIP[e.risk]}`}>{e.risk} risk</span>}
+      </td>
+      <td className="px-3 py-3.5">
+        <span className={`inline-block px-2 py-0.5 text-xs font-medium whitespace-nowrap ${STAGE_CHIP[e.stage]}`}>
+          {STAGE_LABELS[e.stage]}
+          {e.stage === 'drafting' && e.blanks ? ` · ${e.blanks} blanks` : ''}
         </span>
-      </div>
-      <div className="flex flex-[1_1_150px] flex-col text-sm tabular-nums">
-        {due ? (
+        {canEdit && (
+          <label className="mt-1.5 block">
+            <span className="sr-only">Stage of {e.title}</span>
+            <select
+              value={e.stageSet ? e.stage : ''}
+              onChange={ev => onStage(ev.target.value as Stage | '')}
+              className="min-h-9 w-full border border-rule bg-paper px-1.5 text-xs text-ink-soft"
+            >
+              <option value="">Auto</option>
+              {MANUAL_STAGES.map(s => (
+                <option key={s} value={s}>
+                  {STAGE_LABELS[s]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </td>
+      <td className="px-3 py-3.5 whitespace-nowrap">
+        {e.due ? (
           <>
-            <span className="text-ink-soft">Bid due {formatKeyDate(due)}</span>
-            <span className={`font-medium ${urgency(due.date)}`}>{daysUntil(due.date) < 0 ? 'Closed' : countdown(due.date)}</span>
+            <div className={`font-mono text-[13px] font-medium ${isOpenStage(e.stage) ? urgency(e.due.date) : 'text-ink-soft'}`}>
+              {formatKeyDate({ date: e.due.date })}
+              {days! >= 0 && ` · ${countdown(e.due.date)}`}
+            </div>
+            <div className="font-mono text-[11px] text-muted">{e.due.time ? `${e.due.time}` : 'Time not given'}{days! < 0 ? ' · closed' : ''}</div>
           </>
         ) : (
-          <span className="text-muted">Bid due date not found</span>
+          <Link href={`/tenders/${e.id}/analysis`} className="text-xs text-ochre underline">
+            Add due date
+          </Link>
         )}
-      </div>
-      <div className="flex-[1_1_120px] text-sm text-ink-soft tabular-nums">
-        {score !== undefined ? `${score} / 100 compliance` : 'Not scored'}
-      </div>
-      <div className={`flex-[1_1_120px] text-sm font-medium ${risk ? RISK_TEXT[risk] : 'text-muted'}`}>
-        {risk ? `${risk} risk` : 'Risk unknown'}
-      </div>
-    </article>
+      </td>
+      <td className="px-3 py-3.5 text-right font-mono text-[13px] whitespace-nowrap text-ink tabular-nums">{e.estimatedCost ? crore(e.estimatedCost) : '—'}</td>
+      <td className={`px-4 py-3.5 text-sm font-medium ${e.eligibility ? ELIGIBLE_TEXT[e.eligibility.verdict] : 'text-muted'}`}>
+        {e.eligibility ? eligibilitySummary(e.eligibility) : 'Not a works tender'}
+      </td>
+    </tr>
   );
+}
+
+function EmdList({ pipeline }: { pipeline: PipelineEntry[] }) {
+  const rows = pipeline.filter(
+    e =>
+      e.emd &&
+      (e.stage === 'submitted' || e.stage === 'lost' || (isOpenStage(e.stage) && e.due && daysUntil(e.due.date) >= 0 && e.eligibility?.verdict !== 'no'))
+  );
+  if (!rows.length) return <p className="text-sm text-ink-soft">No earnest money to deposit or recover right now.</p>;
+  const status = (e: PipelineEntry) =>
+    e.stage === 'submitted' ? { text: 'with the department', tone: 'text-ink' } : e.stage === 'lost' ? { text: 'due back', tone: 'text-forest' } : { text: 'to deposit', tone: 'text-ochre' };
+  return (
+    <ul className="border border-rule-strong bg-sheet">
+      {rows.map(e => (
+        <li key={e.id} className="flex items-baseline justify-between gap-3 border-b border-dotted border-rule-strong px-4 py-2.5 text-sm last:border-0">
+          <span className="min-w-0 truncate text-ink-soft" title={e.title}>
+            {shortTitle(e.title)}
+          </span>
+          <span className={`flex-none text-right font-mono text-[13px] ${status(e).tone}`}>
+            {lakh(e.emd!)} <span className="font-sans text-xs">{status(e).text}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Stat({ label, value, note }: { label: string; value: string; note: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 border-dotted border-rule-strong py-4 pr-4 [&:not(:first-child)]:sm:border-l [&:not(:first-child)]:sm:pl-5">
+      <dt className="text-sm text-muted">{label}</dt>
+      <dd className="font-serif text-3xl text-ink tabular-nums">{value}</dd>
+      <dd className="truncate text-xs text-ink-soft" title={note}>
+        {note}
+      </dd>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="font-serif text-xl font-semibold text-ink">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function Legend({ tone, label }: { tone: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span aria-hidden className={`h-2.5 w-2.5 ${tone}`} />
+      {label}
+    </span>
+  );
+}
+
+
+function spell(n: number): string {
+  const words = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+  return words[n] ?? String(n);
 }

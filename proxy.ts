@@ -23,9 +23,9 @@ export async function proxy(request: NextRequest) {
   const permission = permissionForPath(pathname);
   if (permission && !can(session.role, permission)) {
     if (isApi) return NextResponse.json({ error: 'Your role is not allowed to do this.' }, { status: 403 });
-    const dashboardUrl = new URL('/dashboard', request.url);
-    dashboardUrl.searchParams.set('denied', pathname);
-    return NextResponse.redirect(dashboardUrl);
+    const registerUrl = new URL('/register', request.url);
+    registerUrl.searchParams.set('denied', pathname);
+    return NextResponse.redirect(registerUrl);
   }
 
   return NextResponse.next();

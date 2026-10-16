@@ -93,7 +93,7 @@ export default function TenderAnalysisPage() {
   };
 
   const handleBackToDashboard = () => {
-    router.push('/dashboard');
+    router.push('/register');
   };
 
   // Loading state
@@ -132,7 +132,7 @@ export default function TenderAnalysisPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-8 lg:px-14 pt-8 pb-16 flex flex-col gap-7">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/dashboard" className="inline-flex min-h-11 items-center text-sm text-ink-soft hover:text-ink">
+        <Link href="/register" className="inline-flex min-h-11 items-center text-sm text-ink-soft hover:text-ink">
           ← Register
         </Link>
         {can('bid.view') && (
