@@ -7,7 +7,9 @@
 
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
+import { Sparkles } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import { SAMPLE_DATA_ENABLED, sampleProfile } from '@/lib/company/sample';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { useAuthStore } from '@/state/authStore';
 import { CompanySection, ExperienceSection, FinanceSection, TeamSection, tidyProfile } from '@/components/onboarding/ProfileSections';
@@ -26,6 +28,8 @@ export default function CompanyPage() {
   const editable = can('bid.generate');
   const [draft, setDraft] = useState<CompanyProfile | null>(companyProfile);
   const [status, setStatus] = useState<'clean' | 'dirty' | 'saved'>('clean');
+  // Bumped when the whole file is replaced, so inputs that keep their own text start again from the new values.
+  const [version, setVersion] = useState(0);
 
   if (!draft) return null;
 
@@ -54,10 +58,27 @@ export default function CompanyPage() {
           .
         </p>
         {!editable && <p className="text-sm text-muted">Only an Admin or Bid Writer can change the company file.</p>}
+        {editable && SAMPLE_DATA_ENABLED && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border border-dashed border-rule-strong px-4 py-3">
+            <p className="text-sm text-ink-soft">Just trying ProposalPanda? Replace this file with a made-up contractor, then save.</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDraft(sampleProfile());
+                setVersion(v => v + 1);
+                setStatus('dirty');
+              }}
+            >
+              <Sparkles className="h-4 w-4" aria-hidden /> Fill with sample data
+            </Button>
+          </div>
+        )}
       </div>
 
       {PARTS.map(({ id, title, Section }) => (
-        <section key={id} aria-labelledby={`part-${id}`} className="flex flex-col gap-5 border border-rule-strong bg-sheet p-6 sm:p-8">
+        <section key={`${id}-${version}`} aria-labelledby={`part-${id}`} className="flex flex-col gap-5 border border-rule-strong bg-sheet p-6 sm:p-8">
           <h2 id={`part-${id}`} className="font-serif text-2xl text-ink">
             {title}
           </h2>
