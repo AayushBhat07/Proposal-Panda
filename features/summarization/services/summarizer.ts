@@ -8,6 +8,7 @@
 import { AI_CONFIG } from '@/lib/config/constants';
 import { checkLlmHealth, generateWithLlmSafe } from '@/lib/llm/ollama';
 import { UnreadableDocumentError } from './textExtractor';
+import { findBoq } from './boq';
 import type {
   TenderDocumentInput,
   TenderSummary,
@@ -556,6 +557,7 @@ export class TenderSummarizationService {
           tenderKind: findTenderKind(input.fullText),
           standards: findStandards(input.fullText),
           nameOfWork: findNameOfWork(input.fullText),
+          boq: findBoq(input.fullText),
           worksType: findWorksType(findNameOfWork(input.fullText), input.fullText),
           modelUsed: !this.useLocalModel
             ? 'extractive-fallback'

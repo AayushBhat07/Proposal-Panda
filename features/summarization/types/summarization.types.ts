@@ -99,6 +99,8 @@ export interface TenderSummary {
     tenderKind?: 'works' | 'supply' | 'services';
     /** IS codes and concrete / steel grades mentioned anywhere in the tender, to check drafts against */
     standards?: { isCodes: string[]; grades: string[] };
+    /** Schedules of quantities printed in the tender, read row by row; empty when the BOQ is a separate file */
+    boq?: import('../services/boq').BoqPart[];
     /** Name of work / subject as printed in the NIT, if found */
     nameOfWork?: string;
     /** For works tenders: a building, infrastructure (road, bridge, drain...) or maintenance / repair contract */

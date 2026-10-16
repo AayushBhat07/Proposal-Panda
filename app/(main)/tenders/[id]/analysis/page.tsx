@@ -147,7 +147,7 @@ export default function TenderAnalysisPage() {
         {activeTab === 'summary' && <SummaryPanel summary={report.summary} />}
         {activeTab === 'compliance' && <CompliancePanel compliance={report.compliance} />}
         {activeTab === 'clauses' && <ClausesPanel metadata={metadata} />}
-        {activeTab === 'boq' && <BOQInsightsPanel />}
+        {activeTab === 'boq' && <BOQInsightsPanel metadata={metadata} />}
         {activeTab === 'metadata' && <MetadataPanel metadata={report.metadata} />}
       </AnalysisTabs>
     </div>
