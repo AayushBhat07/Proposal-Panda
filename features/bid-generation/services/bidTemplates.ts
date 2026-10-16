@@ -5,7 +5,8 @@
  * Form names vary between departments, so these follow the common wording, not one tender.
  */
 
-import type { CompanyProfile } from '@/types/onboarding.types';
+import type { CompanyProfile, SimilarWork } from '@/types/onboarding.types';
+import { bidCapacity as computeBidCapacity, formatLakh } from '@/lib/company/profile';
 import type { BidSection } from '../types/bid.types';
 
 export type TenderKind = 'works' | 'supply' | 'services';
@@ -17,14 +18,36 @@ interface TemplateInput {
   company: CompanyProfile;
   /** Defaults to works */
   kind?: TenderKind;
+  /** Completion period from the NIT, for N in the bid capacity formula */
+  months?: number;
+  /** Today, for bringing past turnover to current prices; tests pass a fixed date */
+  asOf?: Date;
 }
+
+const signatory = (company: CompanyProfile) => company.signatoryName?.trim() || '[name of authorised signatory]';
+const designation = (company: CompanyProfile) => company.signatoryDesignation?.trim() || '[designation]';
+
+function registration(company: CompanyProfile): string {
+  const parts = [company.registrationAuthority, company.registrationClass, company.registrationNumber && `No. ${company.registrationNumber}`];
+  const valid = company.registrationValidUpto ? `, valid up to ${company.registrationValidUpto}` : '';
+  return `${parts.filter(Boolean).join(', ')}${valid}`;
+}
+
+/** Numbered lines for the similar works the company file lists, padded to three with blanks. */
+function workLines(works: SimilarWork[] | undefined, blank: string, describe: (w: SimilarWork) => string): string[] {
+  const filled = (works ?? []).filter(w => w.name.trim()).map(describe);
+  while (filled.length < 3) filled.push(blank);
+  return filled.map((line, i) => `${i + 1}. ${line}`);
+}
+
+const value = (lakh: number | null) => (lakh != null ? formatLakh(lakh) : '₹ [value]');
 
 const today = () => new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
 const KIND_CHECKLIST: Record<TenderKind, (company: CompanyProfile) => string[]> = {
   works: company => [
     '5. EPF and ESI registration [attach]',
-    `6. Contractor registration with Government department (${company.registrationClass}) [attach]`,
+    `6. Contractor registration with Government department (${registration(company)}) [attach]`,
     '7. Financial information: turnover for the last 5 years, CA certified with UDIN [attach]',
     '8. Solvency certificate from a scheduled bank or net worth certificate from a CA [attach]',
     '9. Details of similar works completed, with completion certificates [attach]',
@@ -93,53 +116,87 @@ export function declarations({ company, nitRef, tenderTitle, kind = 'works' }: T
       : []),
     '**Affidavit (on non-judicial stamp paper of value [₹ ___], duly notarised)**',
     '',
-    `I, [name of authorised signatory], [designation] of ${company.legalName}, do hereby solemnly affirm that the`,
+    `I, ${signatory(company)}, ${designation(company)} of ${company.legalName}, do hereby solemnly affirm that the`,
     'firm has not been blacklisted, debarred or suspended by any Central/State Government department, PSU or',
     'local body, and that all information and documents submitted with this bid are true and correct.',
     'If any information is found false, the EMD may be forfeited and the firm may be debarred.',
     '',
     `Place: [city]    Date: ${today()}`,
     'Signature and seal of the bidder',
+    ...(company.signatoryName ? [`${company.signatoryName}${company.signatoryDesignation ? `, ${company.signatoryDesignation}` : ''}`] : []),
   ].join('\n');
 }
 
 /** Eligibility proforma for goods and services tenders: past orders and turnover instead of bid capacity. */
-export function pastExperience({ kind = 'supply' }: TemplateInput): string {
+export function pastExperience({ company, kind = 'supply' }: TemplateInput): string {
   const noun = kind === 'services' ? 'services' : 'supplies';
+  const turnover = (company.turnover ?? []).filter(t => t.lakh != null);
   return [
     `**Similar ${noun} completed in the period the bid document specifies**`,
     '',
-    `1. [Order / contract no.], [buyer], [description of ${noun}], ₹ [value], [order date] to [completion date], performance certificate attached: [yes/no]`,
-    `2. [Order / contract no.], [buyer], [description of ${noun}], ₹ [value], [order date] to [completion date], performance certificate attached: [yes/no]`,
-    `3. [Order / contract no.], [buyer], [description of ${noun}], ₹ [value], [order date] to [completion date], performance certificate attached: [yes/no]`,
+    ...workLines(
+      company.similarWorks,
+      `[Order / contract no.], [buyer], [description of ${noun}], ₹ [value], [order date] to [completion date], performance certificate attached: [yes/no]`,
+      w => `${w.name}, ${w.client || '[buyer]'}, ${value(w.valueLakh)}, ${w.start || '[order date]'} to ${w.completion || '[completion date]'}, performance certificate attached: [yes/no]`
+    ),
     '',
     '**Average annual turnover** (CA certified, for the financial years the bid document asks)',
     '',
-    '- FY [____]: ₹ [___]',
-    '- FY [____]: ₹ [___]',
-    '- FY [____]: ₹ [___]',
+    ...(turnover.length
+      ? turnover.map(t => `- FY ${t.year}: ${formatLakh(t.lakh!)}`)
+      : ['- FY [____]: ₹ [___]', '- FY [____]: ₹ [___]', '- FY [____]: ₹ [___]']),
     '',
     'Check each figure against the minimum the bid document sets before submitting.',
   ].join('\n');
 }
 
-export function bidCapacity(): string {
+export function bidCapacity({ company, months, asOf }: TemplateInput): string {
+  const figures = computeBidCapacity(company, months, asOf);
+  const formula = figures
+    ? [
+        `- **A** = ${formatLakh(figures.a)}: the highest year (FY ${figures.aYear}) from the company file, brought to the`,
+        '  current price level at 7% per year. Check it against the CA certificate.',
+        `- **N** = ${figures.n} years (${months} months, the completion period in the NIT)`,
+        `- **B** = ${formatLakh(figures.b)}: works in hand to be completed within N, from the company file`,
+        '',
+        `Bid capacity = (${figures.a} × ${figures.n} × 2) − ${figures.b} = **${formatLakh(figures.capacity)}**, which must be at least the`,
+        'estimated cost put to tender.',
+      ]
+    : [
+        '- **A** = maximum value of civil works executed in any one year during the last 5 years, updated to the current',
+        '  price level at 7% per year (from audited, CA-certified figures): ₹ [___]',
+        '- **N** = number of years prescribed for completion of this work: [___]',
+        '- **B** = value at current price level of existing commitments and works in hand to be completed within N: ₹ [___]',
+        '',
+        'Bid capacity = ([A] × [N] × 2) − [B] = ₹ [___], which must be at least the estimated cost put to tender.',
+      ];
   return [
     'Assessed available bid capacity = (A × N × 2) − B, where:',
     '',
-    '- **A** = maximum value of civil works executed in any one year during the last 5 years, updated to the current',
-    '  price level at 7% per year (from audited, CA-certified figures): ₹ [___]',
-    '- **N** = number of years prescribed for completion of this work: [___]',
-    '- **B** = value at current price level of existing commitments and works in hand to be completed within N: ₹ [___]',
-    '',
-    'Bid capacity = ([A] × [N] × 2) − [B] = ₹ [___], which must be at least the estimated cost put to tender.',
+    ...formula,
     '',
     '**Similar works completed in the last 7 years** (as defined in the NIT)',
     '',
-    '1. [Name of work], [client], ₹ [value], [start date] to [completion date], certificate attached: [yes/no]',
-    '2. [Name of work], [client], ₹ [value], [start date] to [completion date], certificate attached: [yes/no]',
-    '3. [Name of work], [client], ₹ [value], [start date] to [completion date], certificate attached: [yes/no]',
+    ...workLines(
+      company.similarWorks,
+      '[Name of work], [client], ₹ [value], [start date] to [completion date], certificate attached: [yes/no]',
+      w => `${w.name}, ${w.client || '[client]'}, ${value(w.valueLakh)}, ${w.start || '[start date]'} to ${w.completion || '[completion date]'}, certificate attached: [yes/no]`
+    ),
+    ...keyStaffAndPlant(company),
   ].join('\n');
+}
+
+function keyStaffAndPlant(company: CompanyProfile): string[] {
+  const staff = (company.keyStaff ?? []).filter(s => s.name.trim());
+  const machinery = company.machinery?.trim();
+  if (!staff.length && !machinery) return [];
+  return [
+    '',
+    '**Key technical staff and plant**',
+    '',
+    ...staff.map(s => `- ${s.name}, ${s.qualification || '[qualification]'}${s.years != null ? `, ${s.years} years' experience` : ''}`),
+    ...(machinery ? machinery.split('\n').filter(line => line.trim()).map(line => `- ${line.trim().replace(/^[-•]\s*/, '')}`) : []),
+  ];
 }
 
 export function financialBid({ company, nitRef, tenderTitle, kind = 'works' }: TemplateInput): string {

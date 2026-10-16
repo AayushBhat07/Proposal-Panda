@@ -13,6 +13,7 @@ import type { IntelligenceReport } from '@/features/intelligence-orchestrator/ty
 import type { CompanyProfile } from '@/types/onboarding.types';
 import type { BidSection, FoundationBid } from '../types/bid.types';
 import { TEMPLATE_SECTIONS, type TenderKind } from './bidTemplates';
+import { experienceLine } from '@/lib/company/profile';
 import { GSTIN_TOKEN, PAN_TOKEN } from '@/lib/vault/bidVault';
 
 type WorksType = 'building' | 'infrastructure' | 'maintenance';
@@ -592,6 +593,7 @@ function buildContext(report: IntelligenceReport, company: CompanyProfile): stri
     `Submission traps: ${compliance.submissionTraps.join('; ') || 'none'}`,
     '',
     `CONTRACTOR: ${company.legalName}, registration class ${company.registrationClass}, GSTIN ${company.gstin}, PAN ${company.panNumber}, address ${company.registeredAddress}`,
+    ...(experienceLine(company) ? [`CONTRACTOR EXPERIENCE: ${experienceLine(company)}`] : []),
   ].join('\n');
 }
 
@@ -643,7 +645,7 @@ export async function generateFoundationBid(
   for (const section of bidOrder(kind, report.summary.metadata.worksType)) {
     if ('render' in section) {
       const { render, ...meta } = section;
-      sections.push({ ...meta, content: render({ nitRef, tenderTitle, company, kind }) });
+      sections.push({ ...meta, content: render({ nitRef, tenderTitle, company, kind, months }) });
       continue;
     }
     const { id, title, cover, brief, needsSource, maxTokens, finish } = section;

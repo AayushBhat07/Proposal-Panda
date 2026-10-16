@@ -15,6 +15,7 @@ import { announceLogout, useVaultStore } from '@/lib/vault/vaultStore';
 // Only pages that exist; each is shown only to roles that can open it.
 const NAV_ITEMS: Array<{ label: string; href: string; permission?: Permission }> = [
   { label: 'Register', href: '/dashboard' },
+  { label: 'Company', href: '/company' },
   { label: 'Vault', href: '/vault', permission: 'vault.use' },
 ];
 
