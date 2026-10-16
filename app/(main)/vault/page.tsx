@@ -6,13 +6,14 @@
  */
 
 import { useEffect, useState, type FormEvent } from 'react';
-import { Eye, EyeOff, FileText, Lock, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { Eye, EyeOff, FileText, Lock, ShieldCheck, Sparkles, Trash2, Upload } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { MIN_PASSPHRASE, passphraseProblem, useVaultStore } from '@/lib/vault/vaultStore';
 import { mask, scrubStoredBids } from '@/lib/vault/bidVault';
+import { SAMPLE_DATA_ENABLED, SAMPLE_DOCUMENTS, SAMPLE_IDENTIFIERS, SAMPLE_PASSPHRASE } from '@/lib/company/sample';
 import { ALLOWED_TYPES, DOCUMENT_KINDS, MAX_FILE_BYTES, type AccessEntry, type DocumentKind, type VaultDocument } from '@/lib/vault/vault';
 
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
@@ -114,6 +115,22 @@ function SetUp({ busy, onSubmit }: { busy: boolean; onSubmit: (passphrase: strin
         Type it again
         <input type="password" autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)} className={field} />
       </label>
+      {SAMPLE_DATA_ENABLED && (
+        <p className="text-sm text-ink-soft">
+          Trying it out?{' '}
+          <button
+            type="button"
+            className="text-forest underline"
+            onClick={() => {
+              setPassphrase(SAMPLE_PASSPHRASE);
+              setConfirm(SAMPLE_PASSPHRASE);
+            }}
+          >
+            Use the sample passphrase
+          </button>{' '}
+          ({SAMPLE_PASSPHRASE}).
+        </p>
+      )}
       {weak && passphrase.length >= MIN_PASSPHRASE && <p className="text-sm text-seal">{weak}</p>}
       {mismatch && <p className="text-sm text-seal">The two passphrases don&apos;t match.</p>}
       <div>
@@ -184,6 +201,7 @@ function Unlocked({ run, busy }: { run: (action: () => Promise<void>) => Promise
           <Lock className="h-4 w-4" aria-hidden /> Lock now
         </Button>
       </div>
+      {SAMPLE_DATA_ENABLED && <SampleData run={run} busy={busy} />}
       <IdentifiersForm key={vault.identifiers ? 'saved' : 'empty'} run={run} busy={busy} />
       <Documents run={run} busy={busy} />
       <section aria-labelledby="access-log" className="flex flex-col gap-3">
@@ -370,5 +388,38 @@ function Documents({ run, busy }: { run: (action: () => Promise<void>) => Promis
         </ul>
       )}
     </section>
+  );
+}
+
+/** Puts the sample contractor's GSTIN, PAN and specimen certificates in the vault, skipping files already there. */
+function SampleData({ run, busy }: { run: (action: () => Promise<void>) => Promise<void>; busy: boolean }) {
+  const vault = useVaultStore();
+  const missing = SAMPLE_DOCUMENTS.filter(d => !vault.documents.some(doc => doc.name === d.file));
+  const done = !missing.length && vault.identifiers?.gstin === SAMPLE_IDENTIFIERS.gstin;
+  const fill = () =>
+    run(async () => {
+      const session = vault.session!;
+      if (!vault.identifiers) await session.saveIdentifiers(SAMPLE_IDENTIFIERS);
+      for (const { kind, file } of missing) {
+        const response = await fetch(`/sample-contractor/${file}`);
+        if (!response.ok) throw new Error(`Couldn't load the sample file ${file}.`);
+        const type = file.endsWith('.pdf') ? 'application/pdf' : file.endsWith('.png') ? 'image/png' : 'image/jpeg';
+        await session.addDocument(kind, file, type, new Uint8Array(await response.arrayBuffer()));
+      }
+      await vault.refresh();
+    });
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border border-dashed border-rule-strong px-4 py-3">
+      <p className="text-sm text-ink-soft">
+        {done
+          ? 'The sample GSTIN, PAN and certificates are in the vault.'
+          : `Just trying ProposalPanda? Add a made-up GSTIN and PAN${vault.identifiers ? ' (yours are kept)' : ''} and ${missing.length} specimen certificates.`}
+      </p>
+      {!done && (
+        <Button type="button" variant="outline" size="sm" isLoading={busy} disabled={busy} onClick={fill}>
+          <Sparkles className="h-4 w-4" aria-hidden /> Fill with sample data
+        </Button>
+      )}
+    </div>
   );
 }

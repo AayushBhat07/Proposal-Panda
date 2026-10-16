@@ -15,6 +15,8 @@ import OnboardingLayout from '@/components/onboarding/OnboardingLayout';
 import OnboardingSummary from '@/components/onboarding/OnboardingSummary';
 import { CompanySection, ExperienceSection, FinanceSection, TeamSection, tidyProfile } from '@/components/onboarding/ProfileSections';
 import type { CompanyProfile } from '@/types/onboarding.types';
+import { SAMPLE_DATA_ENABLED, sampleProfile } from '@/lib/company/sample';
+import { Sparkles } from 'lucide-react';
 
 const STEPS = ['Company', 'Finances', 'Similar works', 'Team and plant', 'Review'] as const;
 
@@ -68,11 +70,29 @@ function Wizard({ saved }: { saved: CompanyProfile | null }) {
     setTimeout(() => router.push(can('vault.use') ? '/vault' : '/dashboard'), 100);
   };
 
+  // Fills every step with the sample contractor and opens the review, where each part can still be edited.
+  const fillSample = () => {
+    const sample = sampleProfile();
+    setDraft(sample);
+    setCompanyProfile(sample);
+    setStep(4);
+    setReached(4);
+    window.scrollTo({ top: 0 });
+  };
+
   const companyValid = !!(draft.legalName.trim() && draft.registrationClass.trim() && draft.registeredAddress.trim());
   const Section = [CompanySection, FinanceSection, ExperienceSection, TeamSection][step];
 
   return (
     <OnboardingLayout steps={STEPS} current={step} reached={companyValid ? reached : 0} onStep={i => (i === step ? undefined : go(i))}>
+      {SAMPLE_DATA_ENABLED && step < 4 && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border border-dashed border-rule-strong px-4 py-3">
+          <p className="text-sm text-ink-soft">Just trying ProposalPanda? Fill every step with a made-up contractor.</p>
+          <Button type="button" variant="outline" size="sm" onClick={fillSample}>
+            <Sparkles className="h-4 w-4" aria-hidden /> Fill with sample data
+          </Button>
+        </div>
+      )}
       {step < 4 ? (
         <form onSubmit={handleNext} className="flex flex-col gap-6">
           <div className="flex flex-col gap-1">
