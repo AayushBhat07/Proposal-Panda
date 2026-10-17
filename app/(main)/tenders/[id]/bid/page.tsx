@@ -111,9 +111,8 @@ export default function FoundationBidPage() {
       saveToLocalStorage('foundationBids', stored);
       setBid(stored);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Bid generation failed.';
-      setError(message);
-      setDraftError(message);
+      // Shown in the site office's own banner, not the page error block.
+      setDraftError(err instanceof Error ? err.message : 'Bid generation failed.');
     } finally {
       setIsGenerating(false);
     }

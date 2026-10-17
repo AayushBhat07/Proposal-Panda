@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import type { CrewId, CrewState } from './crew';
 import { CREW } from './crew';
 import { BACK_DESKS } from './Desk';
@@ -125,8 +125,8 @@ function Prop({ kind }: { kind: Look['prop'] }) {
   }
 }
 
-/** The pixel figure. `seated` draws the back view. */
-export function Figure({ id, seated, state }: { id: CrewId; seated: boolean; state: CrewState }) {
+/** The pixel figure. `seated` draws the back view. Memoised: walking re-renders only the position. */
+export const Figure = memo(function Figure({ id, seated, state }: { id: CrewId; seated: boolean; state: CrewState }) {
   const look = LOOKS[id];
   const pal = palette(look);
   const extras = seated ? [] : (look.extra ?? []);
@@ -169,7 +169,7 @@ export function Figure({ id, seated, state }: { id: CrewId; seated: boolean; sta
       <g className={styles.legsB}>{pixelRects(LEGS_B, pal, OX, OY + 13)}</g>
     </g>
   );
-}
+});
 
 function Cone() {
   return (
@@ -214,14 +214,17 @@ export function CrewSprite({ id, state, highlighted }: { id: CrewId; state: Crew
   const { position, walking, facing } = useCrewPosition(id, state);
   const desk = CREW[id].desk;
   const atDesk = !walking && position.x === desk.x && position.y === desk.y;
-  // Top-row desks are behind the character (back view); other desks are in front and carry the cone.
+  // Top-row desks are behind the character (back view); front desks draw their own cone, so only
+  // back-desk crew carry one.
   const seated = atDesk && BACK_DESKS.includes(id);
-  const cone = state === 'needs-you' && !(atDesk && !seated);
+  const cone = state === 'needs-you' && BACK_DESKS.includes(id);
   const style: CSSProperties = {
     width: ux(24),
     height: uy(26),
     transform: `translate(${ux(position.x - 12)}, ${uy(position.y - 24)})`,
     zIndex: Math.round(position.y),
+    // A glow rather than just the floor ellipse, which a front desk hides.
+    filter: highlighted ? 'drop-shadow(0 0 2px #f2c230) drop-shadow(0 0 1px #f2c230)' : undefined,
   };
   const text = bubbleText(id, state);
   const short = state === 'working' ? 'working' : state === 'needs-you' ? 'edit me' : STATE_WORD[state];
@@ -235,7 +238,7 @@ export function CrewSprite({ id, state, highlighted }: { id: CrewId; state: Crew
           {cone && <Cone />}
         </g>
       </svg>
-      {state !== 'idle' && (
+      {state !== 'idle' && !walking && (
       <span
         className={`absolute left-1/2 -translate-x-1/2 rounded-[3px] border border-ink/70 bg-white px-1 py-px font-mono text-[9px] leading-tight whitespace-nowrap shadow-sm @md:text-[10px] ${BUBBLE_TONE[state]} ${highlighted ? 'ring-2 ring-[#f2c230]' : ''}`}
         style={{ bottom: uy(19) }}

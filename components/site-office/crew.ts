@@ -48,7 +48,7 @@ export const WAYPOINTS = {
 export const CREW: Record<CrewId, CrewMember> = {
   foreman: { id: 'foreman', role: 'Foreman', desk: { x: 40, y: 40 }, workingLine: 'checking the drafts' },
   clerk: { id: 'clerk', role: 'Document clerk', desk: { x: 30, y: 110 }, workingLine: 'scanning pages' },
-  electrician: { id: 'electrician', role: 'Electrician', desk: { x: 290, y: 120 }, workingLine: 'starting the generator' },
+  electrician: { id: 'electrician', role: 'Electrician', desk: { x: 276, y: 124 }, workingLine: 'starting the generator' },
   estimator: { id: 'estimator', role: 'Estimator', desk: { x: 80, y: 110 }, workingLine: 'totting up the EMD' },
   planner: { id: 'planner', role: 'Planner', desk: { x: 130, y: 110 }, workingLine: 'marking dates' },
   engineer: { id: 'engineer', role: 'Site engineer', desk: { x: 130, y: 45 }, workingLine: 'reading the scope' },

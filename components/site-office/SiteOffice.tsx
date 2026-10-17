@@ -170,6 +170,13 @@ export default function SiteOffice({ pipeline, events, title, error }: SiteOffic
   const percent = Math.round(office.progress * 100);
   const diary = [...office.diary].reverse();
   const heading = pipeline === 'analysis' ? 'Reading the tender' : 'Drafting the bid';
+  const diaryHeading = (
+    <>
+      <NotebookPen className="size-4 text-muted" aria-hidden />
+      <span className="flex-1 text-sm font-medium text-ink">Site diary</span>
+      <span className="font-mono text-xs text-muted tabular-nums">{office.diary.length}</span>
+    </>
+  );
 
   return (
     <section aria-label="Site office" className="flex min-w-0 flex-col gap-4 border border-rule-strong bg-sheet p-3 sm:p-5">
@@ -224,17 +231,17 @@ export default function SiteOffice({ pipeline, events, title, error }: SiteOffic
         <div className="min-w-0">{plain ? <PlainList office={office} pipeline={pipeline} /> : <Scene pipeline={pipeline} office={office} selected={selected} />}</div>
 
         <aside className="flex min-w-0 flex-col border border-rule bg-paper lg:h-0 lg:min-h-full">
+          {/* A toggle on small screens; on desktop the diary is always open, so just a heading. */}
           <button
             type="button"
             onClick={() => setDiaryOpen(o => !o)}
             aria-expanded={diaryOpen}
-            className="flex min-h-11 items-center gap-2 px-3 text-left lg:pointer-events-none"
+            className="flex min-h-11 items-center gap-2 px-3 text-left lg:hidden"
           >
-            <NotebookPen className="size-4 text-muted" aria-hidden />
-            <span className="flex-1 text-sm font-medium text-ink">Site diary</span>
-            <span className="font-mono text-xs text-muted tabular-nums">{office.diary.length}</span>
-            <ChevronDown className={`size-4 text-muted lg:hidden ${diaryOpen ? 'rotate-180' : ''}`} aria-hidden />
+            {diaryHeading}
+            <ChevronDown className={`size-4 text-muted ${diaryOpen ? 'rotate-180' : ''}`} aria-hidden />
           </button>
+          <h3 className="hidden min-h-11 items-center gap-2 px-3 lg:flex">{diaryHeading}</h3>
           <ol aria-live="polite" aria-relevant="additions" className={`min-h-0 flex-1 overflow-y-auto border-t border-rule px-3 py-2 ${diaryOpen ? 'max-lg:max-h-64' : 'max-lg:sr-only'}`}>
             {diary.length === 0 && <li className="py-1 text-sm text-muted">Nothing on site yet.</li>}
             {diary.map(line => (

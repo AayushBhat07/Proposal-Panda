@@ -179,7 +179,8 @@ function RegisterContent() {
         {uploadState === 'error' && (
           <div className="border border-seal/40 bg-seal-tint p-8 flex flex-col items-center gap-3 text-center">
             <p className="font-serif text-xl text-seal">The tender couldn&apos;t be analysed</p>
-            <p className="text-sm text-ink-soft">{errorMessage || 'Please try again.'}</p>
+            {/* With events the site office above already shows the message. */}
+            {events.length === 0 && <p className="text-sm text-ink-soft">{errorMessage || 'Please try again.'}</p>}
             <Button onClick={handleRetryUpload}>Try again</Button>
           </div>
         )}
