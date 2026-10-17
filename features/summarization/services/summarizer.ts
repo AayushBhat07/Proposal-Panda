@@ -522,7 +522,7 @@ export function factsBlock(f: Facts): string {
     !f.keyDates?.length && f.datesOnPortal && 'Key dates: as per the CPP portal (not printed in the document)',
     ...[...(f.keyTerms ?? []), ...(f.eligibility ?? [])].map(t => `${t.label}: "${t.text.slice(0, 300)}"`),
   ].filter(Boolean);
-  return lines.length ? `Facts already read from this tender (correct; repeat them as given, never contradict them or call them "not specified"):\n- ${lines.join('\n- ')}\n\n` : '';
+  return lines.length ? `Facts already read from this tender. They are correct: never contradict them or call them "not specified". Use one only where the task asks for it, and do not copy this list into the answer:\n- ${lines.join('\n- ')}\n\n` : '';
 }
 
 const PRICE_VARIATION_LINE = /10\s*CC|price variation|escalation/i;
@@ -532,7 +532,15 @@ const PRICE_VARIATION_LINE = /10\s*CC|price variation|escalation/i;
  * tender text does not contain ("Rs. 12,179.70" for a printed "1,21,797"; "Clause 2.10A"). Lines about Clause 10CC
  * are replaced by what the tender states, or by "not specified" when it never mentions 10CC.
  */
-export function groundSection(section: string, fullText: string, priceVariation?: string): string {
+/** Which quoted eligibility rule a model line is about. */
+const ELIGIBILITY_TOPIC: Array<[RegExp, string]> = [
+  [/similar\s+work/i, 'Similar works'],
+  [/turn\s?over/i, 'Turnover'],
+  [/solvency/i, 'Solvency'],
+  [/enlist|registration|registered/i, 'Enlistment'],
+];
+
+export function groundSection(section: string, fullText: string, priceVariation?: string, eligibility: Array<{ label: string; text: string }> = []): string {
   const digits = (s: string) => s.replace(/(\d)\s*,\s*(?=\d)/g, '$1');
   const source = digits(fullText);
   // Clause numbers ("2.10A"), Indian-grouped amounts ("1,21,797") and long figures; not lists like "No. 2, 5, 12".
@@ -549,6 +557,10 @@ export function groundSection(section: string, fullText: string, priceVariation?
         const bullet = line.match(/^\s*(?:[-*•]|\d+\.)?\s*/)![0] || '- ';
         return [`${bullet}Price variation (Clause 10CC): ${priceVariation ? `${applies ? 'applies' : 'does not apply'}. The tender: "${priceVariation}"` : 'Not specified in the tender.'}`];
       }
+      // "Similar works thresholds: Not specified" when the text rules quoted the rule.
+      const topic = /not specified/i.test(line) && ELIGIBILITY_TOPIC.find(([re]) => re.test(line));
+      const rule = topic && eligibility.find(e => e.label === topic[1]);
+      if (rule) return [`${line.match(/^\s*(?:[-*•]|\d+\.)?\s*/)![0] || '- '}${rule.label}: "${rule.text}"`];
       return [...line.matchAll(FIGURE)].every(m => supported(m[0])) ? [line] : [];
     })
     .join('\n');
@@ -633,7 +645,7 @@ export class TenderSummarizationService {
       };
       this.facts = factsBlock(facts);
       const priceVariation = keyTerms.find(t => t.label === 'Price variation (Clause 10CC)')?.text;
-      const ground = (section: string) => (this.useLocalModel ? groundSection(section, input.fullText, priceVariation) : section);
+      const ground = (section: string) => (this.useLocalModel ? groundSection(section, input.fullText, priceVariation, facts.eligibility) : section);
 
       const executiveSummary = await this.generateExecutiveSummary(chunks);
       const commercialTerms = await this.generateCommercialTerms(chunks);

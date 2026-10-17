@@ -254,4 +254,8 @@ test('drops invented figures and clause numbers, and states 10CC as the tender d
     '- EMD: Rs. 1,21,797\n- Price variation (Clause 10CC): does not apply. The tender: "Clause 10 CC Increase/Decrease in Price of materials/wages NOT APPLICABLE."'
   );
   assert.equal(groundSection('- 10CC applies.', 'No escalation clause here.'), '- Price variation (Clause 10CC): Not specified in the tender.');
+  assert.equal(
+    groundSection('- Similar works thresholds: Not specified in the tender.', '', undefined, [{ label: 'Similar works', text: 'Three similar works of 40%.' }]),
+    '- Similar works: "Three similar works of 40%."'
+  );
 });
