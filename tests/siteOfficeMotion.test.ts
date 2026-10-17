@@ -37,7 +37,7 @@ test('idle crew wait near the chai counter, each on its own spot', () => {
   const spots = ids.map(chaiSpot);
   assert.equal(new Set(spots.map(p => `${p.x},${p.y}`)).size, ids.length);
   for (const p of spots) {
-    assert.ok(Math.abs(p.x - WAYPOINTS.chai.x) <= 20 && Math.abs(p.y - WAYPOINTS.chai.y) <= 10);
+    assert.ok(Math.abs(p.x - WAYPOINTS.chai.x) <= 20 && p.y >= WAYPOINTS.chai.y && p.y - WAYPOINTS.chai.y <= 24);
   }
 });
 

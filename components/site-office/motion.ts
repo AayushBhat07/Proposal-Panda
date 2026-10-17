@@ -22,14 +22,15 @@ export const FOREMAN_DROP: Point = { x: WAYPOINTS.foremanDesk.x + 16, y: WAYPOIN
 
 const ORDER = Object.keys(CREW) as CrewId[];
 
-/** A spot near `base`, spread on a 5-wide grid by crew id so people don't stack. */
-function spread(id: CrewId, base: Point, dx: number, dy: number): Point {
+/** A spot near `base`, spread on a `cols`-wide grid by crew id so people don't stack. */
+function spread(id: CrewId, base: Point, cols: number, dx: number, dy: number): Point {
   const i = ORDER.indexOf(id);
-  return { x: base.x + ((i % 5) - 2) * dx, y: base.y + Math.floor(i / 5) * dy };
+  return { x: base.x + ((i % cols) - (cols - 1) / 2) * dx, y: base.y + Math.floor(i / cols) * dy };
 }
 
-export const chaiSpot = (id: CrewId): Point => spread(id, WAYPOINTS.chai, 7, 8);
-export const windowSpot = (id: CrewId): Point => spread(id, { x: WAYPOINTS.window.x, y: WAYPOINTS.window.y + 10 }, 8, 6);
+// Sprites are 12px wide, so idle crew stand a full sprite apart in rows of three.
+export const chaiSpot = (id: CrewId): Point => spread(id, WAYPOINTS.chai, 3, 12, 8);
+export const windowSpot = (id: CrewId): Point => spread(id, { x: WAYPOINTS.window.x, y: WAYPOINTS.window.y + 10 }, 5, 8, 6);
 
 /** Where the character ends up for a state. */
 export function destinationFor(id: CrewId, state: CrewState): Point {
