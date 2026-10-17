@@ -18,7 +18,7 @@ test('flags no price variation over a long contract from the quoted terms', () =
     executiveSummary: '', commercialTerms: '', datesAndObligations: '', technicalScope: '',
     legalHighlights: '', attentionPoints: '',
     metadata: {
-      tenderId: 't', tenderTitle: 't', generatedAt: new Date(), modelUsed: 'm', totalChunks: 1, processingTimeMs: 1,
+      tenderId: 't', tenderTitle: 't', generatedAt: new Date(), modelUsed: 'm', totalChunks: 20, processingTimeMs: 1,
       completionMonths: 18,
       keyTerms: [
         { label: 'Price variation (Clause 10CC)', text: 'Price variation under Clause 10CC shall not be applicable for this work.' },
@@ -35,7 +35,7 @@ test('flags no price variation over a long contract from the quoted terms', () =
 const blankSummary = (metadata: Record<string, unknown>, prose = '') => ({
   executiveSummary: prose, commercialTerms: prose, datesAndObligations: prose, technicalScope: prose,
   legalHighlights: prose, attentionPoints: prose,
-  metadata: { tenderId: 't', tenderTitle: 't', generatedAt: new Date(), modelUsed: 'm', totalChunks: 1, processingTimeMs: 1, ...metadata },
+  metadata: { tenderId: 't', tenderTitle: 't', generatedAt: new Date(), modelUsed: 'm', totalChunks: 20, processingTimeMs: 1, ...metadata },
 });
 
 test('model prose alone raises no risk: EMD, "specific", "multiple" and no "extension" word', async () => {

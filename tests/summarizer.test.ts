@@ -6,6 +6,8 @@ import {
   findInvitingOffice,
   findKeyTerms,
   findEmdAmount,
+  findEligibility,
+  groundSection,
   findEstimatedCost,
   findNitReference,
   findRiskClauses,
@@ -228,4 +230,28 @@ test('chunking still moves forward when the overlap is as large as the chunk', (
   const service = new TenderSummarizationService({ maxTokensPerChunk: 4, overlapTokens: 8 });
   const chunks = (service as unknown as { chunkText(text: string): unknown[] }).chunkText('a b c d e f');
   assert.ok(chunks.length > 0 && chunks.length <= 6);
+});
+
+test('quotes eligibility rules with their OR options, skipping the document checklist', () => {
+  const text = [
+    '16. Copy of Financial turnover from CA along with audited balance sheets.',
+    '',
+    'The eligible contractors mean registered in appropriate class and category with CPWD, BSNL, MES.',
+    'Average annual financial turnover of civil works should be at least 50% of the estimated cost put to tender during the last 3 years.',
+    'i) One similar work of 80% value of the estimated cost put to tender Or ii) Two similar works of 60% value of the estimated cost put to tender Or iii) Three similar works of 40% value of the estimated cost put to tender.',
+  ].join('\n');
+  const rules = Object.fromEntries(findEligibility(text).map(r => [r.label, r.text]));
+  assert.match(rules['Enlistment'], /appropriate class and category with CPWD/);
+  assert.match(rules['Turnover'], /at least 50%/);
+  assert.match(rules['Similar works'], /80%.*60%.*40%/);
+});
+
+test('drops invented figures and clause numbers, and states 10CC as the tender does', () => {
+  const tender = 'EMD Rs. 1,21,797/-. Clause 10 CC Increase/Decrease in Price of materials/wages NOT APPLICABLE. Clause 2 applies.';
+  const model = ['- EMD: Rs. 1,21,797', '- EMD (Earnest Money Deposit) is Rs. 12,179.70.', '- Clause number: 2.10A', '- Price variation (10CC): applies.'].join('\n');
+  assert.equal(
+    groundSection(model, tender, 'Clause 10 CC Increase/Decrease in Price of materials/wages NOT APPLICABLE.'),
+    '- EMD: Rs. 1,21,797\n- Price variation (Clause 10CC): does not apply. The tender: "Clause 10 CC Increase/Decrease in Price of materials/wages NOT APPLICABLE."'
+  );
+  assert.equal(groundSection('- 10CC applies.', 'No escalation clause here.'), '- Price variation (Clause 10CC): Not specified in the tender.');
 });

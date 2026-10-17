@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countdown, daysUntil, findKeyDates, formatKeyDate } from '../features/summarization/services/dates';
+import { countdown, datesOnPortal, daysUntil, findKeyDates, formatKeyDate } from '../features/summarization/services/dates';
 
 const pick = (text: string) => Object.fromEntries(findKeyDates(text).map(d => [d.kind, d.time ? `${d.date} ${d.time}` : d.date]));
 
@@ -50,4 +50,14 @@ test('countdowns', () => {
   assert.equal(countdown('2026-10-17', today), 'tomorrow');
   assert.equal(countdown('2026-09-01', today), '45 days ago');
   assert.match(formatKeyDate({ date: '2026-09-01', time: '15:00' }), /^01 Sep\w* 2026, 15:00$/);
+});
+
+test('skips "As per CPP portal" rows, reads "Tender Opening" and OCR-split times', () => {
+  const portal = '13 Date & time of pre-bid meeting : As per CPP portal\n14 Venue of pre-bid meeting : As per CPP portal\n16 Tentative date of technical presentation : 3rd June 2026';
+  assert.deepEqual(findKeyDates(portal), []);
+  assert.equal(datesOnPortal(portal), true);
+  const spa = '• Date and Place of Tender Opening: 14:00 Hours on 11th May 2026 at Conference Room';
+  assert.deepEqual(findKeyDates(spa).map(d => [d.kind, d.date, d.time]), [['opening', '2026-05-11', '14:00']]);
+  const scan = 'Pre- bi d Mee ting Date, Time & Pl ace At. 11.00. A.M on 19.02.2026\nDate and time of opening of bid on 11 .00 A.M at 25.02.2026';
+  assert.deepEqual(findKeyDates(scan).map(d => [d.kind, d.time]), [['opening', '11:00'], ['preBid', '11:00']]);
 });

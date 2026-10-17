@@ -31,9 +31,16 @@ export interface BoqPart {
 const START = /^\s*SCHEDU?L?E\s+OF\s+QUANTIT(?:Y|IES)\b|^\s*BILL\s+OF\s+QUANTIT(?:Y|IES)\b|^\s*PRICE\s+SCHEDULE\b/i;
 const NUMBER = String.raw`\d{1,3}(?:,\d{2,3})*(?:\.\d+)?|\d+(?:\.\d+)?`;
 /** The figures at the end of a BOQ row: quantity, unit (one or two words), rate, amount. */
-const ROW = new RegExp(String.raw`^(.*?)\s*(${NUMBER})\s+([A-Za-z][A-Za-z.]{0,11}(?:\s?[A-Za-z.]{1,6})?)\s+(${NUMBER})\s+(${NUMBER})\s*$`);
+/** "Cum", "Sq. m", or a "per …" unit like "per letter per cm height". */
+const UNIT = String.raw`[A-Za-z][A-Za-z.]{0,11}(?:\s?[A-Za-z.]{1,6})?|[Pp]er(?:\s+[A-Za-z.]{1,8}){1,4}`;
+const ROW = new RegExp(String.raw`^(.*?)\s*(${NUMBER})\s+(${UNIT})\s+(${NUMBER})\s+(${NUMBER})\s*$`);
 const ITEM_NO = /^(\d{1,3}(?:\.\d{1,3}){0,4}|\(?[a-z]{1,2}\)|[ivx]{1,4}\))(?:\s+|$)(.*)$/;
 const TOTAL = new RegExp(String.raw`^\s*(?:grand\s+|sub[\s-]?)?total\b[^\d]*(${NUMBER})\s*$`, 'i');
+/** A total whose figure wraps onto a later line ("Grand Total" / "(I+II+…+XI)" / "9402546.40"). */
+const TOTAL_LABEL = /^\s*(?:grand\s+|sub[\s-]?)?total\b[^\d]*$/i;
+const TRAILING_FIGURE = new RegExp(String.raw`^[^\d]*(${NUMBER})\s*$`);
+/** "Grand Total", "Total of ALL SUB HEAD": the schedule's own total, which later sub-head totals must not replace. */
+const GRAND = /\bgrand\s+total\b|\btotal\s+of\s+all\b/i;
 const SUB_HEAD = /^\s*SUB\s?-?HEAD\b\s*([IVXL]+)?\s*[:\-–]*\s*(.*)$/i;
 /** Page furniture repeated on every page of a tender; never part of an item. */
 const NOISE = /^\s*(?:correction\s*[–-]|page\s+\d+\s*$|item\s*$|no\.\s+description|description of item|\(in rs\.?\)|amount\s*$|qty\.?\s|rate\s*$)/i;
@@ -56,6 +63,7 @@ function parsePart(lines: string[], title: string): BoqPart {
   let lastTop: string | undefined;
   let buffer: string[] = [];
   let statedTotal: number | undefined;
+  let grand = false;
   let subHead: string[] | null = null;
   let heading: { no: string; text: string; previous?: string } | undefined;
   /** An item number continues the current numbering (gaps of up to three allowed); "1.5 sq. mm cable" inside item 2 is text, not item 1.5. */
@@ -69,11 +77,13 @@ function parsePart(lines: string[], title: string): BoqPart {
   const clean = lines.map(l => l.trim()).filter(l => l && !NOISE.test(l));
   for (let i = 0; i < clean.length; i++) {
     let line = clean[i];
-    // Figures split over short lines ("754" / "Quintal" / "906.39 6,83,418"): join them back into one row.
-    if (!ROW.test(line) && line.length <= 24) {
-      for (let take = 1; take <= 3 && i + take < clean.length; take++) {
+    // Figures split over short lines ("754" / "Quintal" / "906.39 6,83,418", or "a) Khallasi 24" / "Per" / "Person" /
+    // "Per" / "Month" / "29607.00 7,10,568.00"): join them back into one row.
+    const endsInQty = new RegExp(String.raw`\s(?:${NUMBER})$`).test(line);
+    if (!ROW.test(line) && (line.length <= 24 || endsInQty)) {
+      for (let take = 1; take <= 5 && i + take < clean.length; take++) {
         const joined = clean.slice(i, i + take + 1).join(' ');
-        if (clean.slice(i + 1, i + take + 1).every(l => l.length <= 24) && ROW.test(joined) && new RegExp(String.raw`^(?:${NUMBER})(?:\s|$)`).test(line)) {
+        if (clean.slice(i + 1, i + take + 1).every(l => l.length <= 24) && ROW.test(joined) && (endsInQty || new RegExp(String.raw`^(?:${NUMBER})(?:\s|$)`).test(line))) {
           line = joined;
           i += take;
           break;
@@ -81,9 +91,18 @@ function parsePart(lines: string[], title: string): BoqPart {
       }
     }
 
-    const total = TOTAL.exec(line);
+    let total = TOTAL.exec(line);
+    let label = line;
+    if (!total && TOTAL_LABEL.test(line)) {
+      for (let take = 1; take <= 3 && i + take < clean.length && !total; take++) {
+        total = TRAILING_FIGURE.exec(clean[i + take]);
+        if (total) i += take;
+        else label += ` ${clean[i + take]}`;
+      }
+    }
     if (total) {
-      statedTotal = toNumber(total[1]);
+      if (!grand) statedTotal = toNumber(total[1]);
+      grand ||= GRAND.test(label);
       continue;
     }
 

@@ -21,7 +21,7 @@ export function urgency(date: string): string {
   return 'text-ink';
 }
 
-export default function KeyDates({ dates, editable, onSave }: { dates: KeyDate[] | undefined; editable: boolean; onSave: (dates: KeyDate[]) => void }) {
+export default function KeyDates({ dates, onPortal, editable, onSave }: { dates: KeyDate[] | undefined; onPortal?: boolean; editable: boolean; onSave: (dates: KeyDate[]) => void }) {
   const [editing, setEditing] = useState(false);
   const byKind = new Map((dates ?? []).map(d => [d.kind, d]));
   const [draft, setDraft] = useState<Record<KeyDateKind, { date: string; time: string }>>(() =>
@@ -92,7 +92,7 @@ export default function KeyDates({ dates, editable, onSave }: { dates: KeyDate[]
       ) : (
         <p className="flex items-center gap-2 text-sm text-ink-soft">
           <CalendarClock className="h-4 w-4 text-muted" aria-hidden />
-          {dates ? 'No dates were found in the tender text.' : 'This tender was analysed before dates were read.'}{' '}
+          {onPortal ? 'The tender says its dates are on the CPP portal (eprocure.gov.in).' : dates ? 'No dates were found in the tender text.' : 'This tender was analysed before dates were read.'}{' '}
           {editable ? 'Add the bid due date so it shows on the register.' : ''}
         </p>
       )}

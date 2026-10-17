@@ -92,3 +92,32 @@ test('insights find the few items carrying most of the value, and arithmetic sli
   assert.deepEqual(insights.bySection[0], { section: 'RCC', amount: 950, items: 2 });
   assert.equal(rupees('Rs. 15,64,86,955/-'), 156486955);
 });
+
+test('reads "per letter" units, rows whose unit wraps, and the Grand Total over sub-head totals', () => {
+  const text = `SCHEDULE OF QUANTITIES
+2.5 Lettering with black Japan paint of approved brand
+20760 per
+letter
+per cm
+height
+6.15 127674.00
+2.6 Providing and applying white cement based putty 665 sqm 156.05 103773.00
+3 Providing services of manpower
+a) Khallasi 24
+Per
+Person
+Per
+Month
+29607.00 7,10,568.00
+Total of Sub Head I 7,10,568.00
+Grand Total
+(I+II)
+942015.00`;
+  const [part] = findBoq(text);
+  assert.deepEqual(part.items.map(i => [i.quantity, i.unit, i.amount]), [
+    [20760, 'per letter per cm height', 127674],
+    [665, 'sqm', 103773],
+    [24, 'Per Person Per Month', 710568],
+  ]);
+  assert.equal(part.statedTotal, 942015);
+});

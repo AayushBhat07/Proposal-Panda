@@ -5,7 +5,7 @@
  */
 
 import type { CompanyProfile } from '@/types/onboarding.types';
-import { checkEligibility, type Eligibility } from '@/lib/company/eligibility';
+import { checkEligibility, turnoverShareFrom, type Eligibility } from '@/lib/company/eligibility';
 import { countBlanks } from '@/features/bid-generation/services/draftText';
 import { daysUntil, type KeyDate, type KeyDateKind } from '@/features/summarization/services/dates';
 import { rupees } from '@/features/summarization/services/boq';
@@ -41,6 +41,7 @@ export interface StoredReport {
       completionMonths?: number;
       tenderKind?: 'works' | 'supply' | 'services';
       keyDates?: KeyDate[];
+      eligibility?: Array<{ label: string; text: string }>;
     };
   };
   compliance?: { riskLevel?: RiskLevel; complianceScore?: number };
@@ -103,7 +104,7 @@ export function buildPipeline(
       estimatedCost,
       emd: rupees(m.emdAmount),
       risk: report.compliance?.riskLevel,
-      eligibility: m.tenderKind && m.tenderKind !== 'works' ? null : checkEligibility(profile, estimatedCost, m.completionMonths, today),
+      eligibility: m.tenderKind && m.tenderKind !== 'works' ? null : checkEligibility(profile, estimatedCost, m.completionMonths, today, turnoverShareFrom(m.eligibility?.find(e => e.label === 'Turnover')?.text)),
       uploadedAt: report.uploadedAt,
     };
   });
