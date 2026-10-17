@@ -36,6 +36,9 @@ import {
   withIdentifiers,
 } from '@/lib/vault/bidVault';
 import { buildBundle } from '@/lib/vault/bundle';
+import SiteOffice from '@/components/site-office/SiteOffice';
+import { readProgressStream } from '@/lib/progress/stream';
+import type { ProgressEvent } from '@/lib/progress/events';
 import { DOCUMENT_KINDS } from '@/lib/vault/vault';
 
 const COVERS: Array<{ cover: BidCover; label: string; title: string; file: string; note?: string }> = [
@@ -63,6 +66,9 @@ export default function FoundationBidPage() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [events, setEvents] = useState<ProgressEvent[]>([]);
+  /** Why the last draft failed; keeps the office on screen with the crew stopped. */
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [savedAnswers, setSavedAnswers] = useState<Record<string, string>>({});
   const blankCursor = useRef(-1);
@@ -88,6 +94,8 @@ export default function FoundationBidPage() {
     }
     setIsGenerating(true);
     setError(null);
+    setEvents([]);
+    setDraftError(null);
     try {
       const response = await fetch('/api/bid/generate', {
         method: 'POST',
@@ -98,13 +106,14 @@ export default function FoundationBidPage() {
           companyProfile: { ...companyProfile, gstin: GSTIN_TOKEN, panNumber: PAN_TOKEN },
         }),
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.details || data.error || 'Bid generation failed.');
+      const data = await readProgressStream<FoundationBid>(response, event => setEvents(prev => [...prev, event]));
       const stored: StoredBid = { ...data, id };
       saveToLocalStorage('foundationBids', stored);
       setBid(stored);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bid generation failed.');
+      const message = err instanceof Error ? err.message : 'Bid generation failed.';
+      setError(message);
+      setDraftError(message);
     } finally {
       setIsGenerating(false);
     }
@@ -299,10 +308,8 @@ export default function FoundationBidPage() {
         </p>
       )}
 
-      {isGenerating && (
-        <p role="status" className="border-l-2 border-ochre bg-ochre-tint px-4 py-3 text-sm text-ink">
-          Drafting each section on the local model. This can take several minutes on CPU.
-        </p>
+      {(isGenerating || draftError) && (
+        <SiteOffice pipeline="bid" events={events} title="Drafting the foundation bid" error={draftError} />
       )}
 
       {!bid && !isGenerating && (

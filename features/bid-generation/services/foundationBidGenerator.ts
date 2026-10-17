@@ -15,6 +15,8 @@ import type { BidSection, FoundationBid } from '../types/bid.types';
 import { TEMPLATE_SECTIONS, type TenderKind } from './bidTemplates';
 import { experienceLine } from '@/lib/company/profile';
 import { GSTIN_TOKEN, PAN_TOKEN } from '@/lib/vault/bidVault';
+import { trackStep } from '@/lib/progress/stream';
+import type { OnProgress } from '@/lib/progress/events';
 
 type WorksType = 'building' | 'infrastructure' | 'maintenance';
 
@@ -599,15 +601,23 @@ function buildContext(report: IntelligenceReport, company: CompanyProfile): stri
 
 export async function generateFoundationBid(
   report: IntelligenceReport,
-  profile: CompanyProfile
+  profile: CompanyProfile,
+  onProgress?: OnProgress
 ): Promise<FoundationBid> {
   // GSTIN and PAN stay in the browser's vault: the bid carries tokens the page fills in at download time.
   const company = { ...profile, gstin: GSTIN_TOKEN, panNumber: PAN_TOKEN };
   const model = AI_CONFIG.MODEL_NAME;
-  const health = await checkLlmHealth(model);
-  if (!health.available) {
-    throw new BidModelUnavailableError(`Local bid model is not available: ${health.errorMessage}`);
-  }
+  const health = await trackStep(
+    onProgress,
+    'model-check',
+    'Model check',
+    async () => {
+      const h = await checkLlmHealth(model);
+      if (!h.available) throw new BidModelUnavailableError(`Local bid model is not available: ${h.errorMessage}`);
+      return h;
+    },
+    () => 'Local model ready'
+  );
 
   const tenderId = report.summary.metadata.tenderId;
   // The name of work as the NIT prints it beats whatever label the tender was uploaded under.
@@ -645,7 +655,9 @@ export async function generateFoundationBid(
   for (const section of bidOrder(kind, report.summary.metadata.worksType)) {
     if ('render' in section) {
       const { render, ...meta } = section;
-      sections.push({ ...meta, content: render({ nitRef, tenderTitle, company, kind, months }) });
+      await trackStep(onProgress, `section:${meta.id}`, meta.title, () => {
+        sections.push({ ...meta, content: render({ nitRef, tenderTitle, company, kind, months }) });
+      });
       continue;
     }
     const { id, title, cover, brief, needsSource, maxTokens, finish } = section;
@@ -661,21 +673,32 @@ export async function generateFoundationBid(
     // The task goes before and after the long context: Llama 3 drifts when it only comes last.
     const userPrompt = `${task}\n\n${keyFigures}\n\n${context}${needsSource ? sourceExcerpt : ''}\n\nREMINDER: ${task}`;
 
+    const step = `section:${id}` as const;
+    onProgress?.({ step, status: 'started', label: title });
     let content = '';
     let problem: string | undefined;
-    for (const temperature of [0.3, 0.1]) {
-      const response = await generateWithLlm({
-        model,
-        systemPrompt: systemPrompt(kind),
-        userPrompt,
-        inferenceOptions: { temperature, max_tokens: maxTokens ?? 900 },
-      });
-      content = tidyDraft(response.content);
-      if (section.clean) content = section.clean(content);
-      problem = findDraftProblem(section, content, facts);
-      if (!problem) break;
-      console.warn(`[bid] ${id} draft rejected at temperature ${temperature}: ${problem}\n${content}`);
+    try {
+      for (const temperature of [0.3, 0.1]) {
+        const response = await generateWithLlm({
+          model,
+          systemPrompt: systemPrompt(kind),
+          userPrompt,
+          inferenceOptions: { temperature, max_tokens: maxTokens ?? 900 },
+        });
+        content = tidyDraft(response.content);
+        if (section.clean) content = section.clean(content);
+        problem = findDraftProblem(section, content, facts);
+        if (!problem) break;
+        console.warn(`[bid] ${id} draft rejected at temperature ${temperature}: ${problem}\n${content}`);
+        if (temperature === 0.3) onProgress?.({ step, status: 'retry', label: title, detail: 'Draft rejected; redoing it' });
+      }
+    } catch (error) {
+      onProgress?.({ step, status: 'failed', label: title });
+      throw error;
     }
+    onProgress?.(
+      problem ? { step, status: 'withheld', label: title, detail: `Needs your edit: ${problem}` } : { step, status: 'done', label: title }
+    );
     if (!problem) {
       content = redactUnknownStandards(content, facts.isCodes ?? new Set());
       content = redactUnknownGrades(content, new Set([...(report.summary.metadata.standards?.grades ?? []), ...gradesIn(tenderText)]));

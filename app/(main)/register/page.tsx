@@ -9,7 +9,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/state/authStore';
 import TenderUpload from '@/components/dashboard/TenderUpload';
-import ProcessingState from '@/components/dashboard/ProcessingState';
+import SiteOffice from '@/components/site-office/SiteOffice';
+import { readProgressStream } from '@/lib/progress/stream';
+import type { ProgressEvent } from '@/lib/progress/events';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { saveToLocalStorage, getFromLocalStorage } from '@/services/storage/mockStorageService';
@@ -33,7 +35,6 @@ function registerOrder(a: StoredReport, b: StoredReport): number {
 }
 
 type UploadState = 'idle' | 'processing' | 'success' | 'error';
-type ProcessingStage = 'analyzing' | 'scoring' | 'finalizing';
 
 interface StoredReport {
   id: string;
@@ -58,7 +59,7 @@ function RegisterContent() {
   const { can } = useAuthStore();
   const [reports, setReports] = useState<StoredReport[]>([]);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
-  const [processingStage, setProcessingStage] = useState<ProcessingStage>('analyzing');
+  const [events, setEvents] = useState<ProgressEvent[]>([]);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -74,7 +75,7 @@ function RegisterContent() {
     try {
       setUploadedFile(file);
       setUploadState('processing');
-      setProcessingStage('analyzing');
+      setEvents([]);
       setErrorMessage(null);
 
       const tenderId = `TENDER-${Date.now()}`;
@@ -86,15 +87,8 @@ function RegisterContent() {
       formData.append('tenderId', tenderId);
       formData.append('tenderTitle', tenderTitle);
 
-      // The stage indicator can't see inside the pipeline, so advance it on a timer.
-      const scoringTimer = setTimeout(() => setProcessingStage('scoring'), 4000);
       const response = await fetch('/api/intelligence/run', { method: 'POST', body: formData });
-      clearTimeout(scoringTimer);
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to process tender document.');
-      }
-      setProcessingStage('finalizing');
+      const data = await readProgressStream<Record<string, unknown>>(response, event => setEvents(prev => [...prev, event]));
 
       const saved = saveToLocalStorage('intelligenceReports', {
         id: tenderId,
@@ -169,8 +163,13 @@ function RegisterContent() {
           <p className="text-sm text-ink-soft">Your role can read analysed tenders but not upload new ones.</p>
         )}
         {can('tender.upload') && uploadState === 'idle' && <TenderUpload onUpload={handleFileUpload} />}
-        {uploadState === 'processing' && uploadedFile && (
-          <ProcessingState fileName={uploadedFile.name} stage={processingStage} />
+        {(uploadState === 'processing' || (uploadState === 'error' && events.length > 0)) && uploadedFile && (
+          <SiteOffice
+            pipeline="analysis"
+            events={events}
+            title={`Reading ${uploadedFile.name}`}
+            error={uploadState === 'error' ? errorMessage : null}
+          />
         )}
         {uploadState === 'success' && (
           <p className="border border-rule-strong bg-sheet p-8 text-center text-ink">

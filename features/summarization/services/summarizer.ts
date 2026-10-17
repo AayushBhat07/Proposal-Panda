@@ -10,6 +10,8 @@ import { checkLlmHealth, generateWithLlmSafe } from '@/lib/llm/ollama';
 import { UnreadableDocumentError } from './textExtractor';
 import { findBoq } from './boq';
 import { findKeyDates } from './dates';
+import { trackStep } from '@/lib/progress/stream';
+import type { AnalysisStep } from '@/lib/progress/events';
 import type {
   TenderDocumentInput,
   TenderSummary,
@@ -514,7 +516,10 @@ export class TenderSummarizationService {
 
       // Step 2: Check the local model once, then generate each section.
       // Sequential on purpose: a local Ollama serves one request at a time.
-      const health = await checkLlmHealth(this.model);
+      const { onProgress } = options;
+      const health = await trackStep(onProgress, 'model-check', 'Model check', () => checkLlmHealth(this.model), h =>
+        h.available ? 'Local model ready' : 'Local model offline; using extractive summaries'
+      );
       this.useLocalModel = health.available;
       this.fallbackSections = 0;
       if (!health.available) {
@@ -523,13 +528,23 @@ export class TenderSummarizationService {
         );
       }
 
-      const executiveSummary = await this.generateExecutiveSummary(chunks);
-      const commercialTerms = await this.generateCommercialTerms(chunks);
-      const datesAndObligations = await this.generateDatesAndObligations(chunks);
-      const technicalScope = await this.generateTechnicalScope(chunks);
-      const legalHighlights = await this.generateLegalHighlights(chunks);
-      const attentionPoints = await this.generateAttentionPoints(chunks);
-      const eligibilityAndClauses = await this.generateEligibilityAndClauses(chunks);
+      const step = (id: AnalysisStep, label: string, run: () => Promise<string>, detail?: () => string) =>
+        trackStep(onProgress, id, label, run, detail);
+      const executiveSummary = await step('executive-summary', 'Executive summary', () => this.generateExecutiveSummary(chunks));
+      const commercialTerms = await step('commercial-terms', 'Commercial terms', () => this.generateCommercialTerms(chunks), () => {
+        const emd = findEmdAmount(input.fullText);
+        return emd ? `EMD: ${emd}` : 'EMD not found';
+      });
+      const datesAndObligations = await step('dates', 'Dates and obligations', () => this.generateDatesAndObligations(chunks), () => {
+        const months = findCompletionMonths(input.fullText);
+        return months ? `Completion period: ${months} months` : 'Completion period not found';
+      });
+      const technicalScope = await step('technical-scope', 'Technical scope', () => this.generateTechnicalScope(chunks));
+      const legalHighlights = await step('legal', 'Legal highlights', () => this.generateLegalHighlights(chunks));
+      const attentionPoints = await step('attention-points', 'Attention points', () => this.generateAttentionPoints(chunks));
+      const eligibilityAndClauses = await step('eligibility-clauses', 'Eligibility and key clauses', () =>
+        this.generateEligibilityAndClauses(chunks)
+      );
 
       const processingTimeMs = Date.now() - startTime;
       diagnostics.processingTimeMs = processingTimeMs;

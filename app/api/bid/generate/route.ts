@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requirePermission } from '@/lib/auth/server';
+import { streamProgress } from '@/lib/progress/stream';
 import {
   BidModelUnavailableError,
   generateFoundationBid,
@@ -26,16 +27,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Complete the company profile before generating a bid.' }, { status: 400 });
   }
 
-  try {
-    const bid = await generateFoundationBid(report, companyProfile);
-    return NextResponse.json(bid);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[API] Bid generation failed:', message);
-    // Only the model-unavailable message is meant for the user; other internals stay in the server log.
-    if (error instanceof BidModelUnavailableError) {
-      return NextResponse.json({ error: 'Failed to generate the foundation bid.', details: message }, { status: 503 });
+  return streamProgress(
+    onProgress => generateFoundationBid(report, companyProfile, onProgress),
+    error => {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[API] Bid generation failed:', message);
+      // Only the model-unavailable message is meant for the user; other internals stay in the server log.
+      if (error instanceof BidModelUnavailableError) return { error: message, status: 503 };
+      return { error: 'Failed to generate the foundation bid.', status: 500 };
     }
-    return NextResponse.json({ error: 'Failed to generate the foundation bid.' }, { status: 500 });
-  }
+  );
 }
