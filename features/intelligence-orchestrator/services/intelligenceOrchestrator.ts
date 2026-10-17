@@ -25,6 +25,7 @@ import { UnreadableDocumentError } from '../../summarization/services/textExtrac
 import { analyzeCompliance } from '../../compliance-scoring/services/complianceScorer';
 import type { ComplianceScoringInput } from '../../compliance-scoring/types/compliance.types';
 import { trackStep } from '@/lib/progress/stream';
+import { STEP_LABELS } from '@/lib/progress/events';
 
 /**
  * Execute full intelligence pipeline: Phase 4A → Phase 4B
@@ -107,7 +108,7 @@ export async function executeIntelligencePipeline(
     const complianceResult = await trackStep(
       input.onProgress,
       'compliance',
-      'Compliance check',
+      STEP_LABELS.compliance,
       () => analyzeCompliance(complianceInput),
       r => `Risk level: ${r.score.riskLevel}, score ${r.score.complianceScore}/100`
     );

@@ -16,7 +16,7 @@ import { TEMPLATE_SECTIONS, type TenderKind } from './bidTemplates';
 import { experienceLine } from '@/lib/company/profile';
 import { GSTIN_TOKEN, PAN_TOKEN } from '@/lib/vault/bidVault';
 import { trackStep } from '@/lib/progress/stream';
-import type { OnProgress } from '@/lib/progress/events';
+import { STEP_LABELS, type OnProgress } from '@/lib/progress/events';
 
 type WorksType = 'building' | 'infrastructure' | 'maintenance';
 
@@ -610,7 +610,7 @@ export async function generateFoundationBid(
   const health = await trackStep(
     onProgress,
     'model-check',
-    'Model check',
+    STEP_LABELS['model-check'],
     async () => {
       const h = await checkLlmHealth(model);
       if (!h.available) throw new BidModelUnavailableError(`Local bid model is not available: ${h.errorMessage}`);
@@ -690,14 +690,14 @@ export async function generateFoundationBid(
         problem = findDraftProblem(section, content, facts);
         if (!problem) break;
         console.warn(`[bid] ${id} draft rejected at temperature ${temperature}: ${problem}\n${content}`);
-        if (temperature === 0.3) onProgress?.({ step, status: 'retry', label: title, detail: 'Draft rejected; redoing it' });
+        if (temperature === 0.3) onProgress?.({ step, status: 'retry', label: title, detail: `the first draft was rejected because ${problem}` });
       }
     } catch (error) {
       onProgress?.({ step, status: 'failed', label: title });
       throw error;
     }
     onProgress?.(
-      problem ? { step, status: 'withheld', label: title, detail: `Needs your edit: ${problem}` } : { step, status: 'done', label: title }
+      problem ? { step, status: 'withheld', label: title, detail: `the draft was withheld because ${problem}` } : { step, status: 'done', label: title }
     );
     if (!problem) {
       content = redactUnknownStandards(content, facts.isCodes ?? new Set());

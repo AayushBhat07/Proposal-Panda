@@ -11,7 +11,7 @@ import { UnreadableDocumentError } from './textExtractor';
 import { findBoq } from './boq';
 import { findKeyDates } from './dates';
 import { trackStep } from '@/lib/progress/stream';
-import type { AnalysisStep } from '@/lib/progress/events';
+import { STEP_LABELS, type AnalysisStep } from '@/lib/progress/events';
 import type {
   TenderDocumentInput,
   TenderSummary,
@@ -517,8 +517,13 @@ export class TenderSummarizationService {
       // Step 2: Check the local model once, then generate each section.
       // Sequential on purpose: a local Ollama serves one request at a time.
       const { onProgress } = options;
-      const health = await trackStep(onProgress, 'model-check', 'Model check', () => checkLlmHealth(this.model), h =>
-        h.available ? 'Local model ready' : 'Local model offline; using extractive summaries'
+      // An offline model fails the check but not the run: the summaries fall back to extractive ones.
+      onProgress?.({ step: 'model-check', status: 'started', label: STEP_LABELS['model-check'] });
+      const health = await checkLlmHealth(this.model);
+      onProgress?.(
+        health.available
+          ? { step: 'model-check', status: 'done', label: STEP_LABELS['model-check'], detail: 'Local model ready' }
+          : { step: 'model-check', status: 'failed', label: STEP_LABELS['model-check'], detail: 'Local model offline; using extractive summaries' }
       );
       this.useLocalModel = health.available;
       this.fallbackSections = 0;
@@ -528,23 +533,21 @@ export class TenderSummarizationService {
         );
       }
 
-      const step = (id: AnalysisStep, label: string, run: () => Promise<string>, detail?: () => string) =>
-        trackStep(onProgress, id, label, run, detail);
-      const executiveSummary = await step('executive-summary', 'Executive summary', () => this.generateExecutiveSummary(chunks));
-      const commercialTerms = await step('commercial-terms', 'Commercial terms', () => this.generateCommercialTerms(chunks), () => {
+      const step = (id: AnalysisStep, run: () => Promise<string>, detail?: () => string) =>
+        trackStep(onProgress, id, STEP_LABELS[id], run, detail);
+      const executiveSummary = await step('executive-summary', () => this.generateExecutiveSummary(chunks));
+      const commercialTerms = await step('commercial-terms', () => this.generateCommercialTerms(chunks), () => {
         const emd = findEmdAmount(input.fullText);
         return emd ? `EMD: ${emd}` : 'EMD not found';
       });
-      const datesAndObligations = await step('dates', 'Dates and obligations', () => this.generateDatesAndObligations(chunks), () => {
+      const datesAndObligations = await step('dates', () => this.generateDatesAndObligations(chunks), () => {
         const months = findCompletionMonths(input.fullText);
         return months ? `Completion period: ${months} months` : 'Completion period not found';
       });
-      const technicalScope = await step('technical-scope', 'Technical scope', () => this.generateTechnicalScope(chunks));
-      const legalHighlights = await step('legal', 'Legal highlights', () => this.generateLegalHighlights(chunks));
-      const attentionPoints = await step('attention-points', 'Attention points', () => this.generateAttentionPoints(chunks));
-      const eligibilityAndClauses = await step('eligibility-clauses', 'Eligibility and key clauses', () =>
-        this.generateEligibilityAndClauses(chunks)
-      );
+      const technicalScope = await step('technical-scope', () => this.generateTechnicalScope(chunks));
+      const legalHighlights = await step('legal', () => this.generateLegalHighlights(chunks));
+      const attentionPoints = await step('attention-points', () => this.generateAttentionPoints(chunks));
+      const eligibilityAndClauses = await step('eligibility-clauses', () => this.generateEligibilityAndClauses(chunks));
 
       const processingTimeMs = Date.now() - startTime;
       diagnostics.processingTimeMs = processingTimeMs;

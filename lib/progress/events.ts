@@ -23,6 +23,20 @@ export const ANALYSIS_STEPS = [
 ] as const;
 export type AnalysisStep = (typeof ANALYSIS_STEPS)[number];
 
+/** Plain names for the analysis steps (and the model check in a bid), sent as the event label. */
+export const STEP_LABELS: Record<AnalysisStep, string> = {
+  extract: 'Reading the tender file',
+  'model-check': 'Checking the local model',
+  'executive-summary': 'Executive summary',
+  'commercial-terms': 'Commercial terms',
+  dates: 'Dates and obligations',
+  'technical-scope': 'Technical scope',
+  legal: 'Legal highlights',
+  'attention-points': 'Points to watch',
+  'eligibility-clauses': 'Eligibility and clauses',
+  compliance: 'Compliance score',
+};
+
 /** Bid steps: the model check, then one step per bid section id (e.g. `section:methodology`). */
 export type BidStep = 'model-check' | `section:${string}`;
 
@@ -31,7 +45,8 @@ export type StepId = AnalysisStep | BidStep;
 /**
  * started: the step began. retry: a draft was rejected and is being redone.
  * done: finished. withheld: finished but the draft was withheld (needs a manual edit).
- * failed: the step threw; an `error` line follows.
+ * failed: the step could not run. Usually an `error` line follows; an analysis model check that finds
+ * the model offline also fails, but the run carries on with extractive summaries.
  */
 export type StepStatus = 'started' | 'retry' | 'done' | 'withheld' | 'failed';
 

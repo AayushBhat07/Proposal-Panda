@@ -1,4 +1,4 @@
-import { ANALYSIS_STEPS, type Pipeline, type ProgressEvent, type StepId, type StepStatus } from '@/lib/progress/events';
+import { ANALYSIS_STEPS, STEP_LABELS, type Pipeline, type ProgressEvent, type StepId, type StepStatus } from '@/lib/progress/events';
 import { CREW, CREW_FOR, crewForStep, type CrewId, type CrewState } from './crew';
 
 /**
@@ -45,19 +45,6 @@ export interface OfficeState {
   diary: DiaryLine[];
 }
 
-const ANALYSIS_NAMES: Record<string, string> = {
-  extract: 'Reading the tender file',
-  'model-check': 'Checking the local model',
-  'executive-summary': 'Executive summary',
-  'commercial-terms': 'Commercial terms',
-  dates: 'Dates and obligations',
-  'technical-scope': 'Technical scope',
-  legal: 'Legal highlights',
-  'attention-points': 'Points to watch',
-  'eligibility-clauses': 'Eligibility and clauses',
-  compliance: 'Compliance score',
-};
-
 const STATE_FOR: Record<StepStatus, CrewState> = {
   started: 'working',
   retry: 'redoing',
@@ -66,44 +53,48 @@ const STATE_FOR: Record<StepStatus, CrewState> = {
   failed: 'failed',
 };
 
-const MIN_BID_STEPS = 10;
+// shortcut: the bid plan isn't sent, so assume the longest one (model check + 10 works sections) to keep
+// progress from going backwards; send the plan with the model check if section counts start to vary more.
+const MIN_BID_STEPS = 11;
 
 /** Plain name for a step: the event label when there is one, else a known name, else the section id in words. */
 export function stepName(step: StepId, label?: string): string {
   if (label) return label;
-  if (ANALYSIS_NAMES[step]) return ANALYSIS_NAMES[step];
+  if (step in STEP_LABELS) return STEP_LABELS[step as keyof typeof STEP_LABELS];
   const words = step.replace(/^section:/, '').replace(/-/g, ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function lower(name: string): string {
-  return name.charAt(0).toLowerCase() + name.slice(1);
-}
-
-function diaryLine(event: ProgressEvent, name: string, index: number): DiaryLine {
-  const who = CREW[crewForStep(event.step)].role;
-  const what = lower(name);
-  const key = `${index}`;
-  switch (event.status) {
+function diaryText(who: string, name: string, status: StepStatus, detail?: string): string {
+  // Names are quoted as written: bid titles are title case, so lower-casing them reads wrong.
+  const what = `“${name}”`;
+  const tail = detail ? `: ${detail}` : '.';
+  switch (status) {
     case 'started':
-      return { key, at: event.at, tone: 'info', text: event.detail ? `${who}: ${event.detail}` : `${who} started on ${what}.` };
+      return detail ? `${who}: ${detail}` : `${who} started ${what}.`;
     case 'retry':
-      return { key, at: event.at, tone: 'warn', text: event.detail ? `${who} is redoing ${what}: ${event.detail}` : `${who} is redoing ${what}.` };
+      return `${who} is redoing ${what}${tail}`;
     case 'done':
-      return { key, at: event.at, tone: 'done', text: event.detail ? `${who}: ${event.detail}` : `${who} finished ${what}.` };
+      return detail ? `${who}: ${detail}` : `${who} finished ${what}.`;
     case 'withheld':
-      return {
-        key,
-        at: event.at,
-        tone: 'warn',
-        text: event.detail ? `${who}, ${what}: ${event.detail}` : `${who} left ${what} for you to edit.`,
-      };
+      return `${who} left ${what} for you to edit${tail}`;
     case 'failed':
-      return { key, at: event.at, tone: 'fail', text: `${who} stopped on ${what}${event.detail ? `: ${event.detail}` : '.'}` };
+      return `${who} stopped on ${what}${tail}`;
   }
 }
 
-const FINISHED = new Set<StepStatus>(['done', 'withheld']);
+const TONE: Record<StepStatus, DiaryTone> = { started: 'info', retry: 'warn', done: 'done', withheld: 'warn', failed: 'fail' };
+
+const GENERATOR: Record<StepStatus, GeneratorState> = {
+  started: 'starting',
+  retry: 'starting',
+  done: 'running',
+  withheld: 'running',
+  failed: 'failed',
+};
+
+/** Steps that are over, one way or another. A failed model check during analysis doesn't stop the run. */
+const SETTLED = new Set<StepRow['status']>(['done', 'withheld', 'failed']);
 
 export function officeState(pipeline: Pipeline, events: ProgressEvent[], error?: string | null): OfficeState {
   // Latest status and name per step, in first-seen order.
@@ -120,7 +111,7 @@ export function officeState(pipeline: Pipeline, events: ProgressEvent[], error?:
     const crew = crewForStep(event.step);
     steps.set(event.step, { step: event.step, name, crew, status: event.status });
     latest.set(crew, { state: STATE_FOR[event.status], current: name });
-    diary.push(diaryLine(event, name, index));
+    diary.push({ key: `${index}`, at: event.at, tone: TONE[event.status], text: diaryText(CREW[crew].role, name, event.status, event.detail) });
   });
 
   const rows = [...steps.values()];
@@ -128,13 +119,22 @@ export function officeState(pipeline: Pipeline, events: ProgressEvent[], error?:
   for (const id of CREW_FOR[pipeline]) {
     const own = rows.filter(r => r.crew === id);
     const last = latest.get(id);
+    const needsEdit = own.filter(r => r.status === 'withheld').map(r => r.name);
     crew[id] = {
-      state: last?.state ?? 'idle',
-      finished: own.filter(r => r.status !== 'waiting' && FINISHED.has(r.status)).length,
+      // A withheld section still needs the user after its owner finishes a later one.
+      state: last?.state === 'done' && needsEdit.length ? 'needs-you' : (last?.state ?? 'idle'),
+      finished: own.filter(r => SETTLED.has(r.status)).length,
       total: own.length,
-      needsEdit: own.filter(r => r.status === 'withheld').map(r => r.name),
+      needsEdit,
       current: last?.current,
     };
+  }
+
+  // In a bid the Foreman owns no section: he hands them out and checks them until the last one is in.
+  if (pipeline === 'bid' && rows.length) {
+    const active = rows.find(r => r.status === 'started' || r.status === 'retry');
+    crew.foreman.state = active || error ? 'working' : 'done';
+    crew.foreman.current = active?.name;
   }
 
   // A run that errored stops whoever was still mid-step.
@@ -144,19 +144,13 @@ export function officeState(pipeline: Pipeline, events: ProgressEvent[], error?:
     }
   }
 
-  const finished = rows.filter(r => r.status !== 'waiting' && FINISHED.has(r.status)).length;
+  const finished = rows.filter(r => SETTLED.has(r.status)).length;
   const total = pipeline === 'analysis' ? ANALYSIS_STEPS.length : Math.max(MIN_BID_STEPS, rows.length);
 
   const check = steps.get('model-check')?.status;
-  let generator: GeneratorState =
-    check === 'done' || check === 'withheld'
-      ? 'running'
-      : check === 'started' || check === 'retry'
-        ? 'starting'
-        : check === 'failed'
-          ? 'failed'
-          : 'off';
-  if (error && generator !== 'running') generator = 'failed';
+  let generator: GeneratorState = check && check !== 'waiting' ? GENERATOR[check] : 'off';
+  // An error mid-check means the model never came up; any other error is not the generator's.
+  if (error && generator === 'starting') generator = 'failed';
 
   return { crew, progress: Math.min(1, finished / total), generator, steps: rows, diary };
 }

@@ -12,6 +12,7 @@ import type {
 import { TenderSummarizationService } from './summarizer';
 import { extractTextFromDocx, extractTextFromPlainText, extractChapters, cleanText } from './textExtractor';
 import { trackStep } from '@/lib/progress/stream';
+import { STEP_LABELS } from '@/lib/progress/events';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -33,7 +34,7 @@ export async function summarizeTenderFromFile(
   const { fullText, chapters } = await trackStep(
     options.onProgress,
     'extract',
-    'Text extraction',
+    STEP_LABELS.extract,
     async () => {
       let text: string;
       if (ext === '.docx' || ext === '.pdf') {
