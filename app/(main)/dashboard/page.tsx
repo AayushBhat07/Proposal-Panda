@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
+import { useJobsStore } from '@/state/jobsStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { getAllFromLocalStorage, getFromLocalStorage, setLocalStorage } from '@/services/storage/mockStorageService';
 import { urgency } from '@/components/analysis/KeyDates';
@@ -54,12 +55,17 @@ export default function DashboardPage() {
   const [data, setData] = useState<{ reports: StoredReport[]; bids: StoredBid[]; stages: Record<string, Stage> } | null>(null);
 
   useEffect(() => {
+    const load = () =>
+      setData({
+        reports: getAllFromLocalStorage<StoredReport>('intelligenceReports'),
+        bids: getAllFromLocalStorage<StoredBid>('foundationBids'),
+        stages: getFromLocalStorage<Record<string, Stage>>('tenderStages') ?? {},
+      });
     // localStorage is only readable after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setData({
-      reports: getAllFromLocalStorage<StoredReport>('intelligenceReports'),
-      bids: getAllFromLocalStorage<StoredBid>('foundationBids'),
-      stages: getFromLocalStorage<Record<string, Stage>>('tenderStages') ?? {},
+    load();
+    // An analysis or bid finishing in the background adds to what's stored.
+    return useJobsStore.subscribe((state, prev) => {
+      if (Object.entries(state.jobs).some(([key, job]) => job.status === 'done' && prev.jobs[key]?.status !== 'done')) load();
     });
   }, []);
 

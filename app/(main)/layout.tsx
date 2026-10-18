@@ -8,6 +8,7 @@
 import { ReactNode, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import TopBar from '@/components/dashboard/TopBar';
+import RunTracker from '@/components/dashboard/RunTracker';
 import Spinner from '@/components/ui/Spinner';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -42,6 +43,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-paper">
       <TopBar />
       <main>{children}</main>
+      <RunTracker />
     </div>
   );
 }
