@@ -19,7 +19,9 @@ import MetadataPanel from '@/components/analysis/MetadataPanel';
 import { RISK_CHIP } from '@/components/analysis/risk';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
-import { getFromLocalStorage } from '@/services/storage/mockStorageService';
+import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
+import KeyDates from '@/components/analysis/KeyDates';
+import type { KeyDate } from '@/features/summarization/services/dates';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator/types/orchestration.types';
 
 export default function TenderAnalysisPage() {
@@ -81,8 +83,17 @@ export default function TenderAnalysisPage() {
     }, 500);
   };
 
+  // Corrigenda move dates; the corrected dates replace the ones read from the NIT in this browser's copy.
+  const handleSaveDates = (keyDates: KeyDate[]) => {
+    const stored = getFromLocalStorage<IntelligenceReport & { id: string }>('intelligenceReports', params.id);
+    if (!stored || !report) return;
+    const summary = { ...report.summary, metadata: { ...report.summary.metadata, keyDates } };
+    saveToLocalStorage('intelligenceReports', { ...stored, summary });
+    setReport({ ...report, summary });
+  };
+
   const handleBackToDashboard = () => {
-    router.push('/dashboard');
+    router.push('/register');
   };
 
   // Loading state
@@ -121,7 +132,7 @@ export default function TenderAnalysisPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-8 lg:px-14 pt-8 pb-16 flex flex-col gap-7">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/dashboard" className="inline-flex min-h-11 items-center text-sm text-ink-soft hover:text-ink">
+        <Link href="/register" className="inline-flex min-h-11 items-center text-sm text-ink-soft hover:text-ink">
           ← Register
         </Link>
         {can('bid.view') && (
@@ -133,7 +144,7 @@ export default function TenderAnalysisPage() {
         <span className="font-mono text-xs tracking-widest text-muted break-all">
           {(metadata.nitReference || params.id).toUpperCase()}
         </span>
-        <h1 className="font-serif text-4xl leading-tight text-ink max-w-4xl">{metadata.tenderTitle}</h1>
+        <h1 className="font-serif text-4xl leading-tight text-balance text-ink max-w-4xl">{metadata.nameOfWork ?? metadata.tenderTitle}</h1>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink-soft">
           <span className={`px-2.5 py-1 text-xs font-medium ${RISK_CHIP[report.compliance.riskLevel]}`}>
             {report.compliance.riskLevel} risk · {report.compliance.complianceScore} / 100
@@ -143,11 +154,13 @@ export default function TenderAnalysisPage() {
         </div>
       </div>
 
+      <KeyDates key={JSON.stringify(metadata.keyDates ?? null)} dates={metadata.keyDates} onPortal={metadata.datesOnPortal} editable={can('tender.upload')} onSave={handleSaveDates} />
+
       <AnalysisTabs activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === 'summary' && <SummaryPanel summary={report.summary} />}
         {activeTab === 'compliance' && <CompliancePanel compliance={report.compliance} />}
-        {activeTab === 'clauses' && <ClausesPanel />}
-        {activeTab === 'boq' && <BOQInsightsPanel />}
+        {activeTab === 'clauses' && <ClausesPanel metadata={metadata} />}
+        {activeTab === 'boq' && <BOQInsightsPanel metadata={metadata} />}
         {activeTab === 'metadata' && <MetadataPanel metadata={report.metadata} />}
       </AnalysisTabs>
     </div>

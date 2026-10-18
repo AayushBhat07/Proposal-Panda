@@ -14,7 +14,9 @@ import { announceLogout, useVaultStore } from '@/lib/vault/vaultStore';
 
 // Only pages that exist; each is shown only to roles that can open it.
 const NAV_ITEMS: Array<{ label: string; href: string; permission?: Permission }> = [
-  { label: 'Register', href: '/dashboard' },
+  { label: 'Dashboard', href: '/dashboard' },
+  { label: 'Register', href: '/register' },
+  { label: 'Company', href: '/company' },
   { label: 'Vault', href: '/vault', permission: 'vault.use' },
 ];
 
@@ -40,7 +42,7 @@ export default function TopBar() {
 
       <nav aria-label="Main" className="flex flex-1 flex-wrap gap-6">
         {NAV_ITEMS.filter(item => !item.permission || can(item.permission)).map(item => {
-          const isActive = pathname === item.href || (item.href === '/dashboard' && pathname.startsWith('/tenders'));
+          const isActive = pathname === item.href || (item.href === '/register' && pathname.startsWith('/tenders'));
           return (
             <Link
               key={item.href}

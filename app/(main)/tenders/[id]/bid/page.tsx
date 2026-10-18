@@ -11,6 +11,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Download, FileStack, Lock, Paperclip, Pencil } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
+import { InlineMarkdown } from '@/components/ui/LightMarkdown';
 import { useAuthStore } from '@/state/authStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
@@ -221,7 +222,7 @@ export default function FoundationBidPage() {
     return (
       <div className="mx-auto max-w-xl px-4 py-24 text-center flex flex-col items-center gap-4">
         <p className="font-serif text-2xl text-ink">This tender hasn&apos;t been analysed in this browser yet.</p>
-        <Button variant="outline" onClick={() => router.push('/dashboard')}>
+        <Button variant="outline" onClick={() => router.push('/register')}>
           Back to the register
         </Button>
       </div>
@@ -418,7 +419,7 @@ export default function FoundationBidPage() {
                               {part.text}
                             </mark>
                           ) : (
-                            part.text
+                            <InlineMarkdown key={i} text={part.text} />
                           )
                         )}
                       </div>
