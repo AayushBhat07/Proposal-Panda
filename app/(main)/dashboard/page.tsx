@@ -12,7 +12,7 @@ import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
 import { useJobsStore } from '@/state/jobsStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
-import { fetchRegister, saveStage } from '@/lib/data/api';
+import { fetchRegister, saveStage, type Register } from '@/lib/data/api';
 import { urgency } from '@/components/analysis/KeyDates';
 import { RISK_CHIP } from '@/components/analysis/risk';
 import { countdown, daysUntil, formatKeyDate, KEY_DATE_LABELS, type KeyDateKind } from '@/features/summarization/services/dates';
@@ -28,8 +28,6 @@ import {
   totals,
   type PipelineEntry,
   type Stage,
-  type StoredBid,
-  type StoredReport,
 } from '@/lib/tenders/pipeline';
 
 const crore = (rupees: number) => `₹ ${(rupees / 1e7).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 })} cr`;
@@ -52,16 +50,13 @@ const ELIGIBLE_TEXT = { yes: 'text-forest', no: 'text-seal', check: 'text-ochre'
 export default function DashboardPage() {
   const { companyProfile } = useOnboarding();
   const { can } = useAuthStore();
-  const [data, setData] = useState<{ reports: StoredReport[]; bids: StoredBid[]; stages: Record<string, Stage> } | null>(null);
+  const [data, setData] = useState<Register | null>(null);
 
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = () =>
-      fetchRegister<StoredReport, StoredBid>().then(
-        ({ reports, bids, stages }) => setData({ reports, bids, stages: stages as Record<string, Stage> }),
-        (err: Error) => setError(err.message)
-      );
+      fetchRegister().then(setData, (err: Error) => setError(err.message));
     load();
     // An analysis or bid finishing in the background adds to what's stored.
     return useJobsStore.subscribe((state, prev) => {

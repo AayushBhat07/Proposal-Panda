@@ -14,9 +14,10 @@ import { ANALYSIS_JOB, useJobsStore } from '@/state/jobsStore';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { fetchRegister } from '@/lib/data/api';
+import type { StoredReport } from '@/lib/tenders/pipeline';
 import { RISK_TEXT } from '@/components/analysis/risk';
 import type { RiskLevel } from '@/features/compliance-scoring/types/compliance.types';
-import { countdown, daysUntil, formatKeyDate, type KeyDate } from '@/features/summarization/services/dates';
+import { countdown, daysUntil, formatKeyDate } from '@/features/summarization/services/dates';
 import { urgency } from '@/components/analysis/KeyDates';
 
 const bidDue = (report: StoredReport) => report.summary?.metadata?.keyDates?.find(d => d.kind === 'submission');
@@ -31,14 +32,6 @@ function registerOrder(a: StoredReport, b: StoredReport): number {
   if (openA !== openB) return openA ? -1 : 1;
   if (openA) return bidDue(a)!.date.localeCompare(bidDue(b)!.date) || (bidDue(a)!.time ?? '').localeCompare(bidDue(b)!.time ?? '');
   return b.uploadedAt.localeCompare(a.uploadedAt);
-}
-
-interface StoredReport {
-  id: string;
-  fileName: string;
-  uploadedAt: string;
-  summary?: { metadata?: { tenderTitle?: string; nameOfWork?: string; nitReference?: string; keyDates?: KeyDate[] } };
-  compliance?: { riskLevel?: RiskLevel; complianceScore?: number };
 }
 
 export default function RegisterPage() {
@@ -64,7 +57,7 @@ function RegisterContent() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchRegister<StoredReport, unknown>().then(
+    fetchRegister().then(
       ({ reports }) => {
         setReports(reports.sort(registerOrder));
         setIsLoadingData(false);

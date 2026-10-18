@@ -3,21 +3,21 @@
  * already in the database is overwritten, so sending the same data twice is harmless. Each part needs the
  * permission that would let this user create it; parts they can't create come back as refused, and the
  * browser keeps them for someone who can.
+ *
+ * Delete this route and lib/data/browserImport.ts once no office has data from before the database.
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/auth/server';
+import { NextResponse } from 'next/server';
+import { withPermission } from '@/lib/auth/server';
 import { can } from '@/lib/auth/rbac';
 import { getDb } from '@/lib/db/client';
 import { getAnswers, hasCompany, saveAnswers, saveCompany } from '@/lib/db/repos/company';
 import { addTender, getTender, isTenderId, saveBid, setStage, type StoredReport } from '@/lib/db/repos/tenders';
-import { STAGE_LABELS } from '@/lib/tenders/pipeline';
+import { isStage } from '@/lib/tenders/pipeline';
 
 type Part = 'reports' | 'bids' | 'stages' | 'company' | 'answers';
 
-export async function POST(request: NextRequest) {
-  const auth = await requirePermission(request);
-  if (auth instanceof NextResponse) return auth;
+export const POST = withPermission(undefined, async (request, auth) => {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Nothing to import.' }, { status: 400 });
 
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     imported.stages = 0;
     for (const [id, stage] of Object.entries(body.stages as Record<string, unknown>)) {
       const tender = getTender(db, id);
-      if (tender && !tender.stage && typeof stage === 'string' && stage in STAGE_LABELS && setStage(db, id, stage)) {
+      if (tender && !tender.stage && isStage(stage) && setStage(db, id, stage)) {
         imported.stages++;
       }
     }
@@ -78,4 +78,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ imported, refused });
-}
+});

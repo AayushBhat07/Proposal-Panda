@@ -6,18 +6,7 @@ import { auditLog } from '../schema';
 
 export type AuditEntry = typeof auditLog.$inferSelect;
 
-/** What the vault page reports; the server stamps who and when. */
-export const VAULT_ACTIONS = [
-  'unlocked',
-  'uploaded',
-  'opened',
-  'deleted',
-  'saved identifiers',
-  'exported bid',
-  'built bundle',
-  'moved to server',
-  'erased',
-] as const;
+export { VAULT_ACTIONS } from '@/lib/vault/actions';
 
 export function record(db: Db, userEmail: string, action: string, target?: string | null, detail?: string | null): void {
   db.insert(auditLog)

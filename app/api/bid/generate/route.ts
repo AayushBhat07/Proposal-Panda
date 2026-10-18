@@ -2,8 +2,8 @@
  * Foundation bid generation: analysed tender + company profile → bid draft from the local model.
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/auth/server';
+import { NextResponse } from 'next/server';
+import { withPermission } from '@/lib/auth/server';
 import { streamProgress } from '@/lib/progress/stream';
 import {
   BidModelUnavailableError,
@@ -15,10 +15,7 @@ import { getCompany } from '@/lib/db/repos/company';
 import { getTender, saveBid } from '@/lib/db/repos/tenders';
 import { record } from '@/lib/db/repos/audit';
 
-export async function POST(request: NextRequest) {
-  const auth = await requirePermission(request, 'bid.generate');
-  if (auth instanceof NextResponse) return auth;
-
+export const POST = withPermission('bid.generate', async (request, auth) => {
   const body = await request.json().catch(() => null);
   const tenderId = String(body?.tenderId ?? '');
   const db = getDb();
@@ -49,4 +46,4 @@ export async function POST(request: NextRequest) {
       return { error: 'Failed to generate the foundation bid.', status: 500 };
     }
   );
-}
+});

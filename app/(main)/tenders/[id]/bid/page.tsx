@@ -39,6 +39,7 @@ import { buildBundle } from '@/lib/vault/bundle';
 import SiteOffice from '@/components/site-office/SiteOffice';
 import { bidJobKey, useJobsStore } from '@/state/jobsStore';
 import { DOCUMENT_KINDS } from '@/lib/vault/vault';
+import { SAMPLE_DATA_ENABLED, fillSampleBlanks } from '@/lib/company/sample';
 
 const COVERS: Array<{ cover: BidCover; label: string; title: string; file: string; note?: string }> = [
   { cover: 'technical', label: 'COVER I', title: 'Technical bid', file: 'cover-1-technical' },
@@ -67,6 +68,8 @@ export default function FoundationBidPage() {
   const [bid, setBid] = useState<StoredBid | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set when the tender couldn't be read: missing, or the server didn't answer. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   // The run lives in the jobs store so it keeps going if the user opens another page.
   const job = useJobsStore(state => state.jobs[bidJobKey(id)]);
   const startBid = useJobsStore(state => state.startBid);
@@ -82,7 +85,11 @@ export default function FoundationBidPage() {
   const vaultOpen = vault.status === 'unlocked' && can('vault.use');
 
   useEffect(() => {
-    Promise.all([fetchTender<Record<string, unknown>, StoredBid>(id).catch(() => null), fetchAnswers().catch(() => ({}))]).then(
+    const tender = fetchTender<Record<string, unknown>, StoredBid>(id).catch((err: Error) => {
+      setLoadError(err.message === 'No such tender.' ? "This tender isn't on the office register." : err.message);
+      return null;
+    });
+    Promise.all([tender, fetchAnswers().catch(() => ({}))]).then(
       ([tender, answers]) => {
         setReport(tender?.report ?? null);
         setBid(tender?.bid ?? null);
@@ -196,6 +203,22 @@ export default function FoundationBidPage() {
     keep(updated);
   };
 
+  // Trying the app: every blank gets the sample contractor's details, and with the vault open its certificates
+  // are attached. Not remembered as the office's answers.
+  const handleSampleFill = () => {
+    if (!bid) return;
+    const editedAt = new Date().toISOString();
+    keep({
+      ...bid,
+      sections: bid.sections.map(section => {
+        const attached =
+          section.id === 'document-checklist' && vaultOpen ? attachFromVault(section.content, vault.documents) : section.content;
+        const content = fillSampleBlanks(attached);
+        return content === section.content ? section : { ...section, content, editedAt };
+      }),
+    });
+  };
+
   // One PDF of the vault certificates in checklist order (the order of DOCUMENT_KINDS), built in the browser.
   const handleBundle = async () => {
     if (!bid || !vault.session) return;
@@ -234,7 +257,7 @@ export default function FoundationBidPage() {
   if (!report) {
     return (
       <div className="mx-auto max-w-xl px-4 py-24 text-center flex flex-col items-center gap-4">
-        <p className="font-serif text-2xl text-ink">This tender hasn&apos;t been analysed in this browser yet.</p>
+        <p className="font-serif text-2xl text-ink">{loadError ?? "This tender isn't on the office register."}</p>
         <Button variant="outline" onClick={() => router.push('/register')}>
           Back to the register
         </Button>
@@ -303,6 +326,7 @@ export default function FoundationBidPage() {
           blanks={sharedBlanks(bid.sections.map(s => s.content))}
           saved={savedAnswers}
           onFill={handleFill}
+          onFillSample={SAMPLE_DATA_ENABLED ? handleSampleFill : undefined}
         />
       )}
 

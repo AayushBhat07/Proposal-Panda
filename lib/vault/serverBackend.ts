@@ -7,22 +7,10 @@
 
 import type { AccessEntry, AccessLog, Backend } from './vault';
 import { decodeRecord, encodeRecord } from './wire';
+import { jsonBody, officeFetch } from '@/lib/data/api';
 
 const url = (key: string) => `/api/vault/entries/${encodeURIComponent(key)}`;
-
-async function call(input: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(input, { cache: 'no-store', ...init });
-  if (!response.ok && response.status !== 404) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || 'The office server did not answer. Check it is running and try again.');
-  }
-  return response;
-}
-
-const json = (body: unknown): RequestInit => ({
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
-});
+const call = (input: string, init?: RequestInit) => officeFetch(input, init, { allow404: true });
 
 export function serverBackend(): Backend {
   return {
@@ -31,7 +19,7 @@ export function serverBackend(): Backend {
       if (response.status === 404) return undefined;
       return decodeRecord<T>((await response.json()).value);
     },
-    put: async (key, value) => void (await call(url(key), { method: 'PUT', ...json({ value: encodeRecord(value) }) })),
+    put: async (key, value) => void (await call(url(key), jsonBody('PUT', { value: encodeRecord(value) }))),
     delete: async key => void (await call(url(key), { method: 'DELETE' })),
     keys: async () => (await (await call('/api/vault/entries')).json()).keys,
     clear: async () => void (await call('/api/vault/entries', { method: 'DELETE' })),
@@ -40,7 +28,7 @@ export function serverBackend(): Backend {
 
 /** The vault's access log, kept by the server where nobody can edit or delete it. */
 export const serverAccessLog: AccessLog = {
-  add: async ({ action, detail }) => void (await call('/api/audit', { method: 'POST', ...json({ action, detail }) })),
+  add: async ({ action, detail }) => void (await call('/api/audit', jsonBody('POST', { action, detail }))),
   read: async () => {
     const { entries } = await (await call('/api/audit?scope=vault')).json();
     return entries.map((e: { at: string; userEmail: string; action: AccessEntry['action']; detail: string | null }) => ({

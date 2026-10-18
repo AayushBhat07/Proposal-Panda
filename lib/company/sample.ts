@@ -5,6 +5,7 @@
  */
 
 import { lastFiveYears } from '@/lib/company/profile';
+import { splitBlanks } from '@/features/bid-generation/services/draftText';
 import type { DocumentKind, Identifiers } from '@/lib/vault/vault';
 import type { CompanyProfile } from '@/types/onboarding.types';
 
@@ -12,7 +13,7 @@ export const SAMPLE_DATA_ENABLED = process.env.NODE_ENV !== 'production';
 
 const TURNOVER_LAKH = [6894, 6127, 5280, 4615, 3842];
 
-export function sampleProfile(date = new Date()): CompanyProfile {
+export function sampleProfile(date = new Date()) {
   return {
     legalName: 'Himgiri Buildcon Private Limited',
     constitution: 'Private limited company',
@@ -47,7 +48,7 @@ export function sampleProfile(date = new Date()): CompanyProfile {
       'Hydraulic excavator 0.9 cum (owned)',
       'Steel props and shuttering for 2,000 sqm (owned)',
     ].join('\n'),
-  };
+  } satisfies CompanyProfile;
 }
 
 export const SAMPLE_IDENTIFIERS: Identifiers = { gstin: '02AAHCH4821K1Z5', pan: 'AAHCH4821K' };
@@ -68,3 +69,53 @@ export const SAMPLE_DOCUMENTS: Array<{ kind: DocumentKind; file: string }> = [
   { kind: 'works', file: '07-work-completion-certificate-1-scan.jpg' },
   { kind: 'other', file: '08-company-logo.png' },
 ];
+
+/** Specimen answers for bid blanks, first match wins; the patterns are the blanks bidTemplates leaves. */
+const SAMPLE_BLANKS: Array<[RegExp, (p: ReturnType<typeof sampleProfile>, today: string) => string]> = [
+  [/start date|order date/i, p => p.similarWorks[0].start],
+  [/completion date/i, p => p.similarWorks[0].completion],
+  [/dd\/mm\/yyyy|date/i, (_, today) => today],
+  [/name of authorised signatory|^\[name\]$/i, p => p.signatoryName],
+  [/^\[designation\]$/i, p => p.signatoryDesignation],
+  [/designation of the tender inviting/i, () => 'Executive Engineer'],
+  [/division and address|address as per nit/i, () => 'Executive Engineer, Shimla Central Division, CPWD, Nirman Bhawan, Shimla - 171001'],
+  [/nit no/i, () => '07/EE/SCD/CPWD/2026-27'],
+  [/city/i, () => 'Parwanoo'],
+  [/name of work/i, p => p.similarWorks[0].name],
+  [/client|buyer/i, p => p.similarWorks[0].client],
+  [/order \/ contract no/i, () => 'SCD/CPWD/2023/118'],
+  [/^\[(value|insert value)\]$/i, p => `₹ ${p.similarWorks[0].valueLakh} lakh`],
+  [/₹/, () => '₹ 5,00,000'],
+  [/yes\/no/i, () => 'Yes'],
+  [/below \/ above \/ at par/i, () => 'below'],
+  [/annexure/i, () => 'Annexure A'],
+  [/registration certificates/i, p => `${p.registrationClass}, ${p.registrationAuthority} ${p.registrationNumber}`],
+  [/to be listed/i, p => p.machinery.split('\n')[0]],
+  [/concrete grade/i, () => 'M25'],
+  [/steel grade/i, () => 'Fe 500D'],
+  [/is code/i, () => 'IS 456:2000'],
+  [/flooring/i, () => 'vitrified tiles'],
+  [/finish/i, () => 'acrylic emulsion paint'],
+  [/waterproofing/i, () => 'integral crystalline waterproofing compound'],
+  [/electrical equipment/i, () => 'LED luminaires and MCB distribution boards'],
+  [/make \/ model/i, () => 'Schwing Stetter CP30'],
+  [/period/i, () => '12 months'],
+  [/qualification/i, p => p.keyStaff[0].qualification],
+  [/number/i, () => '4'],
+  [/activities/i, () => 'excavation, foundations, RCC frame, finishing'],
+];
+
+/**
+ * Fills every blank with the sample contractor's details, for trying a bid end to end. [attach] lines are left
+ * for the vault, and model flags ([Edit needed: …]) and single letters are left for a person.
+ */
+export function fillSampleBlanks(text: string, date = new Date()): string {
+  const profile = sampleProfile(date);
+  const today = date.toLocaleDateString('en-GB');
+  return splitBlanks(text)
+    .map(({ text: part, blank }) => {
+      if (!blank || part === '[attach]' || /^\[(edit needed|[a-z]\])/i.test(part)) return part;
+      return SAMPLE_BLANKS.find(([pattern]) => pattern.test(part))?.[1](profile, today) ?? 'Specimen';
+    })
+    .join('');
+}

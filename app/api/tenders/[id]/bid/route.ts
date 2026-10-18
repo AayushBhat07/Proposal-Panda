@@ -1,12 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/auth/server';
+import { NextResponse } from 'next/server';
+import { withPermission } from '@/lib/auth/server';
 import { getDb } from '@/lib/db/client';
 import { saveBid } from '@/lib/db/repos/tenders';
 
 /** Saves edits to a drafted bid (sections edited, blanks filled, vault documents attached). */
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requirePermission(request, 'bid.generate');
-  if (auth instanceof NextResponse) return auth;
+export const PUT = withPermission('bid.generate', async (request, auth, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
   if (!body?.bid || !Array.isArray(body.bid.sections)) {
@@ -16,4 +14,4 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: 'No such tender.' }, { status: 404 });
   }
   return NextResponse.json({ ok: true });
-}
+});

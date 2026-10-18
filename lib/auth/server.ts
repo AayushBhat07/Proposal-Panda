@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getDb } from '@/lib/db/client';
-import { findUserById, type UserRow } from '@/lib/db/repos/users';
+import { findUserById, UserInputError, type UserRow } from '@/lib/db/repos/users';
 import { can, type Permission, type RoleName } from './rbac';
 import { SESSION_COOKIE, SESSION_TTL_SECONDS, signSession, verifySession, type Session } from './session';
 
@@ -37,6 +37,23 @@ export async function requirePermission(
     return NextResponse.json({ error: 'Your role is not allowed to do this.' }, { status: 403 });
   }
   return user;
+}
+
+/** A route handler behind a permission: answers 401/403 itself, and turns a UserInputError into a 400. */
+export function withPermission<C>(
+  permission: Permission | undefined,
+  handler: (request: NextRequest, user: Session, context: C) => Response | Promise<Response>
+) {
+  return async (request: NextRequest, context: C = undefined as C): Promise<Response> => {
+    const user = await requirePermission(request, permission);
+    if (user instanceof NextResponse) return user;
+    try {
+      return await handler(request, user, context);
+    } catch (error) {
+      if (error instanceof UserInputError) return NextResponse.json({ error: error.message }, { status: 400 });
+      throw error;
+    }
+  };
 }
 
 export async function setSessionCookie(response: NextResponse, user: UserRow): Promise<void> {
