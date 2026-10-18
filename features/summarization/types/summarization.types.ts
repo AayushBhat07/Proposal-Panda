@@ -95,6 +95,10 @@ export interface TenderSummary {
     invitingOffice?: string;
     /** Delay, price variation, advance, security deposit and guarantee terms quoted from the tender text */
     keyTerms?: Array<{ label: string; text: string }>;
+    /** Two quotes that set the performance guarantee differently */
+    guaranteeConflict?: [string, string];
+    /** Eligibility rules quoted from the tender: enlistment, similar works, turnover, solvency */
+    eligibility?: Array<{ label: string; text: string }>;
     /** Risk-bearing clauses (guarantees, forfeiture, finality, disputes, extensions...) quoted from the tender text */
     riskClauses?: Array<{ label: string; text: string }>;
     /** Works (build/repair), supply (goods, GeM) or services (manpower, security, consultancy, O&M) */
@@ -103,6 +107,8 @@ export interface TenderSummary {
     standards?: { isCodes: string[]; grades: string[] };
     /** Bid due, opening, pre-bid and query dates read from the NIT (or corrected by hand on the analysis page) */
     keyDates?: import('../services/dates').KeyDate[];
+    /** The NIT prints "As per CPP portal" in place of its dates */
+    datesOnPortal?: boolean;
     /** Schedules of quantities printed in the tender, read row by row; empty when the BOQ is a separate file */
     boq?: import('../services/boq').BoqPart[];
     /** Name of work / subject as printed in the NIT, if found */

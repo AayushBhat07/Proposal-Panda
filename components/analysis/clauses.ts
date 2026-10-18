@@ -5,7 +5,7 @@
 
 import type { TenderSummary } from '@/features/summarization/types/summarization.types';
 
-export type ClauseGroup = 'Money' | 'Time' | 'Legal' | 'Submission';
+export type ClauseGroup = 'Eligibility' | 'Money' | 'Time' | 'Legal' | 'Submission';
 
 export interface ClauseEntry {
   label: string;
@@ -15,8 +15,14 @@ export interface ClauseEntry {
   quote?: string;
 }
 
-/** Labels match those the summarizer gives keyTerms and riskClauses. */
+/** Labels match those the summarizer gives eligibility, keyTerms and riskClauses. */
 const CATALOGUE: Array<Omit<ClauseEntry, 'quote'>> = [
+  { label: 'Enlistment', group: 'Eligibility', meaning: 'Who may bid at all: the registration class and category the tender asks for. Check yours is valid on the last date of submission.' },
+  { label: 'Similar works', group: 'Eligibility', meaning: 'The completed works you must show, as shares of the estimated cost. Keep the completion certificates ready to upload.' },
+  { label: 'Government work', group: 'Eligibility', meaning: 'At least one of the qualifying works must be for a government body. A private-client work alone will not do.' },
+  { label: 'Turnover', group: 'Eligibility', meaning: 'Minimum average annual turnover, certified by a chartered accountant. Use the figure here, not the CPWD default.' },
+  { label: 'Solvency', group: 'Eligibility', meaning: 'A bank or CA solvency certificate of at least this value, usually not older than one year.' },
+  { label: 'Profitability', group: 'Eligibility', meaning: 'Loss years the tender tolerates in recent balance sheets.' },
   {
     label: 'Performance guarantee',
     group: 'Money',
@@ -91,7 +97,7 @@ const CATALOGUE: Array<Omit<ClauseEntry, 'quote'>> = [
   },
 ];
 
-export const CLAUSE_GROUPS: ClauseGroup[] = ['Money', 'Time', 'Legal', 'Submission'];
+export const CLAUSE_GROUPS: ClauseGroup[] = ['Eligibility', 'Money', 'Time', 'Legal', 'Submission'];
 
 /**
  * Every catalogued clause, with the tender's words where they were found. Null for reports analysed before
@@ -99,6 +105,6 @@ export const CLAUSE_GROUPS: ClauseGroup[] = ['Money', 'Time', 'Legal', 'Submissi
  */
 export function clauseRegister(metadata: TenderSummary['metadata']): ClauseEntry[] | null {
   if (!metadata.keyTerms && !metadata.riskClauses) return null;
-  const quotes = new Map([...(metadata.riskClauses ?? []), ...(metadata.keyTerms ?? [])].map(t => [t.label, t.text]));
+  const quotes = new Map([...(metadata.riskClauses ?? []), ...(metadata.keyTerms ?? []), ...(metadata.eligibility ?? [])].map(t => [t.label, t.text]));
   return CATALOGUE.map(entry => ({ ...entry, quote: quotes.get(entry.label) }));
 }

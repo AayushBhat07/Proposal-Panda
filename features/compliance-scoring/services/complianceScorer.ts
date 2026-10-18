@@ -126,7 +126,9 @@ async function performComplianceAnalysis(
 
   const conservativeBias = input.options?.conservativeBias === true;
   const penalty = Object.values(results).reduce((sum, r) => sum + r.scorePenalty, 0) + (conservativeBias ? 5 : 0);
-  const complianceScore = Math.max(0, Math.min(100, 80 - penalty));
+  // A one- or two-page NIT or press notice carries no contract conditions; few risks found is not low risk.
+  const thin = summary.metadata.totalChunks <= 3;
+  const complianceScore = Math.max(0, Math.min(thin ? 60 : 100, 80 - penalty));
 
   const riskCategories = {
     financial: higherRisk(financialRisks.level, contractRisks.level),
@@ -135,14 +137,17 @@ async function performComplianceAnalysis(
     submission: submissionRisks.level,
   };
 
+  const overall = calculateOverallRiskLevel(riskCategories);
   return {
     complianceScore,
-    riskLevel: calculateOverallRiskLevel(riskCategories),
+    riskLevel: thin && overall === 'Low' ? 'Medium' : overall,
     riskCategories,
     identifiedRisks,
     missingOrWeakClauses: identifyMissingClauses(summary),
     submissionTraps: identifySubmissionTraps(clauses),
-    confidenceNotes: generateConfidenceNotes(complianceScore, identifiedRisks.length, conservativeBias),
+    confidenceNotes:
+      (thin ? 'Only a short notice was analysed, so this score is provisional: the contract conditions are in the full bid document. Upload it to score them. ' : '') +
+      generateConfidenceNotes(complianceScore, identifiedRisks.length, conservativeBias),
   };
 }
 
@@ -279,12 +284,19 @@ const EXPECTED_CLAUSES: Array<{ label: string; clause: string }> = [
 
 /** Clauses absent from the tender text itself. Skipped for reports analysed before the text was checked. */
 function identifyMissingClauses(summary: Summary): MissingClause[] {
-  if (!summary.metadata.riskClauses) return [];
+  const conflict = summary.metadata.guaranteeConflict;
+  const conflicting: MissingClause[] = conflict
+    ? [{ clause: 'Performance guarantee (stated two ways)', reason: `The tender says "${conflict[0]}" and also "${conflict[1]}". Ask which applies in a pre-bid query.` }]
+    : [];
+  if (!summary.metadata.riskClauses) return conflicting;
   const clauses = clausesOf(summary);
-  return EXPECTED_CLAUSES.filter(({ label }) => !clauses[label]).map(({ clause }) => ({
-    clause,
-    reason: 'Not found in the tender text. Check whether the General Conditions of Contract it refers to (e.g. CPWD GCC) cover it.',
-  }));
+  return [
+    ...conflicting,
+    ...EXPECTED_CLAUSES.filter(({ label }) => !clauses[label]).map(({ clause }) => ({
+      clause,
+      reason: 'Not found in the tender text. Check whether the General Conditions of Contract it refers to (e.g. CPWD GCC) cover it.',
+    })),
+  ];
 }
 
 /** Procedural requirements quoted from the tender. */

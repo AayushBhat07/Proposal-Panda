@@ -22,14 +22,14 @@ const LABELS: Array<{ kind: KeyDateKind; label: RegExp }> = [
   {
     kind: 'submission',
     label:
-      /\b(?:last|closing|end)\s+(?:time\s*(?:&|and)\s*)?(?:date|time)(?:\s*(?:&|and)\s*(?:time|date))?\s+(?:of|for)\s+(?:online\s+)?(?:submission|receipt|bid\s+submission|e-?tender)|\bbid\s+(?:submission\s+)?(?:end|last)\s+date|\bsubmission\s+end\b|\bdate\s*(?:&|and)\s*time\s+of\s+submission|\bclosing\s+date\b|\bdue\s+date\s+(?:of|for)\s+submission/i,
+      /\b(?:last|closing|end)\s+(?:time\s*(?:&|and)\s*)?(?:date|time)(?:\s*(?:&|and)\s*(?:time|date))?\s+(?:of|for)\s+(?:online\s+)?(?:submission|receipt|bid\s+submission|e-?tender)|\bbid\s+(?:submission\s+)?(?:end|last)\s+date|\blast\s+date\s*(?:&|and)\s*time\s+of\s+uploading|\bsubmission\s+end\b|\bdate\s*(?:&|and)\s*time\s+of\s+submission|\bclosing\s+date\b|\bdue\s+date\s+(?:of|for)\s+submission/i,
   },
   {
     kind: 'opening',
     label:
-      /\b(?:date|time)(?:\s*(?:&|and)\s*(?:time|date))?\s+(?:of\s+)?(?:the\s+)?opening\b|\b(?:technical\s+)?bid\s+opening(?:\s+date)?\b|\bopening\s+of\s+(?:the\s+)?(?:online\s+)?(?:technical\s+)?(?:bids?|tenders?|packet\s*a)\b/i,
+      /\b(?:date|time)(?:\s*(?:&|and)\s*(?:time|date))?\s+(?:of\s+)?(?:the\s+)?opening\b|\b(?:technical\s+)?(?:bid|tender)\s+opening(?:\s+date)?\b|\bopening\s+of\s+(?:the\s+)?(?:online\s+)?(?:technical\s+)?(?:bids?|tenders?|packet\s*a)\b/i,
   },
-  { kind: 'preBid', label: /\bpre[\s-]?bid\s+(?:meeting|conference)/i },
+  { kind: 'preBid', label: /\bpre[\s-]*bi\s?d\s+(?:mee\s?ting|conference)/i },
   { kind: 'queries', label: /\b(?:bid\s+clarification|last\s+date\s+(?:for|of)\s+(?:seeking\s+clarification|(?:receipt\s+of\s+)?(?:pre[\s-]?bid\s+)?queries))/i },
 ];
 
@@ -43,7 +43,7 @@ const DATE = new RegExp(
   ].join('|'),
   'gi'
 );
-const TIME = /\b(\d{1,2})[:.](\d{2})(?::\d{2})?\s*(a\.?\s?m\.?|p\.?\s?m\.?|hrs?\.?|hours?|noon)?|\b(\d{1,2})\s*(a\.?m\.?|p\.?m\.?)|\b(noon)\b/i;
+const TIME = /\b(\d{1,2})[:.](\d{2})(?::\d{2})?\.?\s*(a\.?\s?m\.?|p\.?\s?m\.?|hrs?\.?|hours?|noon)?|\b(\d{1,2})\s*(a\.?m\.?|p\.?m\.?)|\b(noon)\b/i;
 
 function toIso(day: number, month: number, year: number): string | undefined {
   const y = year < 100 ? 2000 + year : year;
@@ -56,6 +56,8 @@ function readTime(text: string): string | undefined {
   if (!m) return undefined;
   if (m[6]) return '12:00';
   let hour = Number(m[1] ?? m[4]);
+  // "00 A.M" is the tail of an OCR-split "11 .00 A.M", not midnight.
+  if (m[4] && (hour < 1 || hour > 12)) return undefined;
   const minute = Number(m[2] ?? 0);
   const meridiem = (m[3] ?? m[5] ?? '').toLowerCase().replace(/[\s.]/g, '');
   // A bare "3.30" with no AM/PM or hrs could be a clause number; only trust times with a unit or a colon.
@@ -67,12 +69,19 @@ function readTime(text: string): string | undefined {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
+const AS_PER_PORTAL = /\bas\s+per\s+(?:the\s+)?(?:CPPP?|e-?procurement|e-?tender(?:ing)?|online)?\s*(?:portal|website)/i;
+
+/** Every date row says "As per CPP portal": the dates live on the portal, not in the document. */
+export const datesOnPortal = (text: string) =>
+  /\b(?:date|time)\b[^:\n]{0,60}:?\s*as\s+per\s+(?:the\s+)?CPPP?\s*portal/i.test(text.slice(0, 120_000));
+
 /** How far after a label its date may sit: NIT tables wrap the label over several short lines. */
 const WINDOW = 240;
 
 export function findKeyDates(text: string): KeyDate[] {
   // NIT schedules sit near the front; later mentions are conditions ("valid on the last date of submission").
-  const flat = text.slice(0, 120_000).replace(/\s+/g, ' ');
+  // Scans split times as "11 .00 A.M"; join them back.
+  const flat = text.slice(0, 120_000).replace(/\s+/g, ' ').replace(/(\d)\s+([.:])(?=\d{2}\b)/g, '$1$2');
   const found = new Map<KeyDateKind, KeyDate>();
   for (const { kind, label } of LABELS) {
     const global = new RegExp(label.source, 'gi');
@@ -85,6 +94,8 @@ export function findKeyDates(text: string): KeyDate[] {
       if (!dates.length) continue;
       // A table row that reaches the date only through other figures ("7,04,913/- 2months 30.6.16") is some other column.
       if (/\/-|\bRs\.?\s*\d/.test(window.slice(0, dates[0].index))) continue;
+      // "pre-bid meeting : As per CPP portal 14 Venue … 16 Tentative date of presentation : 3rd June": not this row's date.
+      if (AS_PER_PORTAL.test(window.slice(0, dates[0].index))) continue;
       // "From 20-12-2024 at 10:00 hrs to 03-01-2025 at 14:30": the deadline is the end of the range.
       const between = dates.length > 1 ? window.slice(dates[0].index! + dates[0][0].length, dates[1].index) : '';
       const ranged = (kind === 'submission' || kind === 'queries') && between.length < 40 && /\bto\b|\btill\b|से/i.test(between);

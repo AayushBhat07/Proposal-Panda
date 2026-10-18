@@ -31,7 +31,13 @@ function monthIndex(mmYyyy: string): number | undefined {
   return m ? Number(m[2]) * 12 + Number(m[1]) - 1 : undefined;
 }
 
-export function checkEligibility(profile: CompanyProfile | null, estimatedCostRupees: number | undefined, months: number | undefined, today = new Date()): Eligibility | null {
+/** "turnover … should be at least 50% of the estimated cost" → 0.5, from the NIT's own turnover rule. */
+export function turnoverShareFrom(quote: string | undefined): number | undefined {
+  const m = quote?.match(/(\d{1,3})\s*%\s*(?:of\s+)?(?:the\s+)?estimated/i);
+  return m && Number(m[1]) > 0 && Number(m[1]) <= 200 ? Number(m[1]) / 100 : undefined;
+}
+
+export function checkEligibility(profile: CompanyProfile | null, estimatedCostRupees: number | undefined, months: number | undefined, today = new Date(), turnoverShare?: number): Eligibility | null {
   if (!profile || !estimatedCostRupees) return null;
   const cost = estimatedCostRupees / 1e5; // in lakh
   const checks: EligibilityCheck[] = [];
@@ -52,10 +58,12 @@ export function checkEligibility(profile: CompanyProfile | null, estimatedCostRu
 
   const recent = (profile.turnover ?? []).slice(0, 3).filter(t => t.lakh != null);
   const average = recent.length === 3 ? recent.reduce((s, t) => s + t.lakh!, 0) / 3 : undefined;
+  // The NIT's own figure when it prints one (IIT Kanpur asks 50% on some works), else the CPWD default of 30%.
+  const share = turnoverShare ?? 0.3;
   checks.push({
     label: 'Average turnover, last 3 years',
-    need: `At least ${crore(0.3 * cost)}`,
-    result: average == null ? 'unknown' : average >= 0.3 * cost ? 'pass' : 'fail',
+    need: `At least ${crore(share * cost)}${turnoverShare ? ' (from the NIT)' : ''}`,
+    result: average == null ? 'unknown' : average >= share * cost ? 'pass' : 'fail',
     detail: average == null ? 'Turnover for the last 3 years not in the company file' : crore(average),
   });
 

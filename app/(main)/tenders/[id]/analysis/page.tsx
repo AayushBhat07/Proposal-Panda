@@ -154,7 +154,7 @@ export default function TenderAnalysisPage() {
         </div>
       </div>
 
-      <KeyDates key={JSON.stringify(metadata.keyDates ?? null)} dates={metadata.keyDates} editable={can('tender.upload')} onSave={handleSaveDates} />
+      <KeyDates key={JSON.stringify(metadata.keyDates ?? null)} dates={metadata.keyDates} onPortal={metadata.datesOnPortal} editable={can('tender.upload')} onSave={handleSaveDates} />
 
       <AnalysisTabs activeTab={activeTab} onTabChange={setActiveTab}>
         {activeTab === 'summary' && <SummaryPanel summary={report.summary} />}

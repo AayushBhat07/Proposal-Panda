@@ -190,6 +190,8 @@ export interface ComplianceScoringInput {
       completionMonths?: number;
       /** Key contract terms quoted word for word from the tender text */
       keyTerms?: Array<{ label: string; text: string }>;
+      /** Two quotes that set the performance guarantee differently */
+      guaranteeConflict?: [string, string];
       /** Risk-bearing clauses quoted from the tender text */
       riskClauses?: Array<{ label: string; text: string }>;
     };
