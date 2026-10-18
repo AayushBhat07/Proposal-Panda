@@ -2,7 +2,7 @@
 
 import { eq } from 'drizzle-orm';
 import type { Db } from '../open';
-import { bids, tenders } from '../schema';
+import { bids, tenderFiles, tenders } from '../schema';
 
 /** A stored report: the pipeline's IntelligenceReport plus the upload details. Kept as the client saw it. */
 export type StoredReport = { id: string; fileName: string; uploadedAt: string } & Record<string, unknown>;
@@ -28,21 +28,35 @@ export function listRegister(db: Db): { reports: StoredReport[]; bids: StoredBid
   };
 }
 
-export function getTender(db: Db, id: string): { report: StoredReport; bid: StoredBid | null; stage: string | null } | null {
+export function getTender(
+  db: Db,
+  id: string
+): { report: StoredReport; bid: StoredBid | null; stage: string | null; hasFile: boolean } | null {
   const row = db.select().from(tenders).where(eq(tenders.id, id)).get();
   if (!row) return null;
   const bid = db.select().from(bids).where(eq(bids.id, id)).get();
-  return { report: row.report as StoredReport, bid: (bid?.bid as StoredBid) ?? null, stage: row.stage };
+  const hasFile = !!db.select({ id: tenderFiles.id }).from(tenderFiles).where(eq(tenderFiles.id, id)).get();
+  return { report: row.report as StoredReport, bid: (bid?.bid as StoredBid) ?? null, stage: row.stage, hasFile };
 }
 
-/** Adds a new tender. Returns false if the id is taken (nothing is overwritten). */
-export function addTender(db: Db, report: StoredReport, by: string): boolean {
-  const result = db
-    .insert(tenders)
-    .values({ id: report.id, report, uploadedBy: by, createdAt: report.uploadedAt })
-    .onConflictDoNothing()
-    .run();
-  return result.changes > 0;
+export type TenderFile = { name: string; type: string; data: Buffer };
+
+/** Adds a new tender, with the file it came from if given. Returns false if the id is taken (nothing is overwritten). */
+export function addTender(db: Db, report: StoredReport, by: string, file?: TenderFile): boolean {
+  return db.transaction(tx => {
+    const result = tx
+      .insert(tenders)
+      .values({ id: report.id, report, uploadedBy: by, createdAt: report.uploadedAt })
+      .onConflictDoNothing()
+      .run();
+    if (!result.changes) return false;
+    if (file) tx.insert(tenderFiles).values({ id: report.id, ...file }).run();
+    return true;
+  });
+}
+
+export function getTenderFile(db: Db, id: string): TenderFile | null {
+  return db.select({ name: tenderFiles.name, type: tenderFiles.type, data: tenderFiles.data }).from(tenderFiles).where(eq(tenderFiles.id, id)).get() ?? null;
 }
 
 export function updateReport(db: Db, id: string, change: (report: StoredReport) => StoredReport): boolean {

@@ -26,7 +26,7 @@ export interface Register<R, B> {
 export const fetchRegister = <R, B>() => call<Register<R, B>>('/api/tenders');
 
 export const fetchTender = <R, B>(id: string) =>
-  call<{ report: R; bid: B | null; stage: string | null }>(`/api/tenders/${encodeURIComponent(id)}`);
+  call<{ report: R; bid: B | null; stage: string | null; hasFile: boolean }>(`/api/tenders/${encodeURIComponent(id)}`);
 
 export const saveKeyDates = (id: string, keyDates: KeyDate[]) =>
   call(`/api/tenders/${encodeURIComponent(id)}`, { method: 'PATCH', body: { keyDates } });

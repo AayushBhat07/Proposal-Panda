@@ -4,6 +4,7 @@ import { request, params } from './helpers';
 import * as registerRoute from '../app/api/tenders/route';
 import * as tenderRoute from '../app/api/tenders/[id]/route';
 import * as bidRoute from '../app/api/tenders/[id]/bid/route';
+import * as fileRoute from '../app/api/tenders/[id]/file/route';
 import * as companyRoute from '../app/api/company/route';
 import * as answersRoute from '../app/api/answers/route';
 import * as importRoute from '../app/api/import/route';
@@ -103,4 +104,18 @@ test('browser import adds only what is new and what the role may add', async () 
   assert.equal(second.imported.bids, 1, 'only the bid whose tender exists');
   assert.equal(second.imported.stages, 0, 'a stage already set stays');
   assert.deepEqual(second.refused, []);
+});
+
+test('the uploaded NIT is kept with its tender and served back as stored', async () => {
+  const data = Buffer.from('%PDF-1.4 original nit');
+  addTender(getDb(), report('T-FILE'), 'analyst@proposalpanda.dev', { name: 'NIT 12.pdf', type: 'application/pdf', data });
+  const one = await tenderRoute.GET(await request('Viewer', '/api/tenders/T-FILE'), params({ id: 'T-FILE' }));
+  assert.equal((await one.json()).hasFile, true);
+
+  const file = await fileRoute.GET(await request('Viewer', '/api/tenders/T-FILE/file'), params({ id: 'T-FILE' }));
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get('content-type'), 'application/pdf');
+  assert.ok(Buffer.from(await file.arrayBuffer()).equals(data));
+  assert.equal((await fileRoute.GET(await request(null, '/api/tenders/T-FILE/file'), params({ id: 'T-FILE' }))).status, 401);
+  assert.equal((await fileRoute.GET(await request('Viewer', '/api/tenders/T-RO/file'), params({ id: 'T-RO' }))).status, 404);
 });

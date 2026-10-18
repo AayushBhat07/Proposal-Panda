@@ -98,7 +98,12 @@ export async function POST(request: NextRequest) {
           console.log(`[API] Pipeline completed in ${result.diagnostics.totalTimeMs}ms`);
           // On the office register before the browser hears it finished, so a closed tab loses nothing.
           const stored = { id: tenderId, fileName: file.name, uploadedAt: new Date().toISOString(), ...result.report };
-          if (!addTender(getDb(), stored, auth.email)) throw new Error(`Tender ${tenderId} was added twice`);
+          // The type comes from the checked extension, never the browser, so the file can't be served back as HTML.
+          const type = fileName.endsWith('.pdf')
+            ? 'application/pdf'
+            : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          const original = { name: file.name, type, data: buffer };
+          if (!addTender(getDb(), stored, auth.email, original)) throw new Error(`Tender ${tenderId} was added twice`);
           record(getDb(), auth.email, 'analysed tender', tenderId);
           return stored;
         } finally {
