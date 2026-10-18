@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@types/pdfkit": "^0.17.4",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^12.10.0",
     "date-fns": "^4.1.0",
     "docx": "^9.5.1",
     "drizzle-orm": "^0.45.4",
