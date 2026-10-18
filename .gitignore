@@ -43,3 +43,6 @@ next-env.d.ts
 
 # test artifacts (one-time validation)
 /test-tenders/
+
+# local database
+/data/

@@ -8,12 +8,15 @@
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test tests/*.test.ts",
-    "mock-ollama": "node scripts/mock-ollama.mjs"
+    "mock-ollama": "node scripts/mock-ollama.mjs",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "@types/pdfkit": "^0.17.4",
+    "better-sqlite3": "^13.0.3",
     "date-fns": "^4.1.0",
     "docx": "^9.5.1",
+    "drizzle-orm": "^0.45.4",
     "lucide-react": "^0.562.0",
     "mammoth": "^1.11.0",
     "next": "16.3.8",
@@ -25,9 +28,11 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.11",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "pdf-lib": "^1.17.1",
