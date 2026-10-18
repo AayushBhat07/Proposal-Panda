@@ -32,14 +32,23 @@ const EMPTY: CompanyProfile = { legalName: '', registrationClass: '', registered
 export default function OnboardingPage() {
   const router = useRouter();
   const { companyProfile, isComplete, isLoaded } = useOnboarding();
-  useAuth(); // loads the signed-in user shown on the review step
+  const { can, isLoading } = useAuth(); // also loads the signed-in user shown on the review step
 
   useEffect(() => {
     if (isComplete) router.push('/dashboard');
   }, [isComplete, router]);
 
   // Wait for the saved draft so a returning contractor picks up where they stopped.
-  if (!isLoaded || isComplete) return null;
+  if (!isLoaded || isLoading || isComplete) return null;
+  // The company file is shared by the office; only those who can edit it set it up.
+  if (!can('bid.generate')) {
+    return (
+      <div className="mx-auto flex max-w-xl flex-col gap-3 px-4 py-24 text-center">
+        <h1 className="font-serif text-3xl text-ink">The company file isn&apos;t set up yet</h1>
+        <p className="text-ink-soft">Ask your Admin or Bid Writer to finish setup. You can sign in again once they have.</p>
+      </div>
+    );
+  }
   return <Wizard saved={companyProfile} />;
 }
 

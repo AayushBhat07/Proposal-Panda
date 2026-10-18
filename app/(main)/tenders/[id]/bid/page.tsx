@@ -14,7 +14,7 @@ import Spinner from '@/components/ui/Spinner';
 import { InlineMarkdown } from '@/components/ui/LightMarkdown';
 import { useAuthStore } from '@/state/authStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
-import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
+import { fetchAnswers, fetchTender, saveAnswers, saveBid } from '@/lib/data/api';
 import type { BidCover, FoundationBid } from '@/features/bid-generation';
 import {
   countBlanks,
@@ -57,8 +57,6 @@ const reportTitle = (report: Record<string, unknown>) => {
   const metadata = (report.summary as { metadata?: { nameOfWork?: string; tenderTitle?: string } } | undefined)?.metadata;
   return metadata?.nameOfWork ?? metadata?.tenderTitle;
 };
-/** Answers to blanks, kept across bids. One record per browser, like the company profile. */
-type BlankAnswers = { id: 'company'; answers: Record<string, string> };
 
 export default function FoundationBidPage() {
   const { id } = useParams<{ id: string }>();
@@ -84,13 +82,21 @@ export default function FoundationBidPage() {
   const vaultOpen = vault.status === 'unlocked' && can('vault.use');
 
   useEffect(() => {
-    // Browser storage is only readable after hydration.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReport(getFromLocalStorage<Record<string, unknown>>('intelligenceReports', id));
-    setBid(getFromLocalStorage<StoredBid>('foundationBids', id));
-    setSavedAnswers(getFromLocalStorage<BlankAnswers>('blankAnswers', 'company')?.answers ?? {});
-    setIsLoaded(true);
+    Promise.all([fetchTender<Record<string, unknown>, StoredBid>(id).catch(() => null), fetchAnswers().catch(() => ({}))]).then(
+      ([tender, answers]) => {
+        setReport(tender?.report ?? null);
+        setBid(tender?.bid ?? null);
+        setSavedAnswers(answers);
+        setIsLoaded(true);
+      }
+    );
   }, [id]);
+
+  /** Shows the change at once and saves it for the office; says so if the save fails. */
+  const keep = (updated: StoredBid) => {
+    setBid(updated);
+    saveBid(id, updated).catch((err: Error) => setError(`Your change is on screen but did not save: ${err.message}`));
+  };
 
   useEffect(() => {
     checkVault();
@@ -102,8 +108,8 @@ export default function FoundationBidPage() {
     if (useJobsStore.getState().jobs[key]?.status === 'done') clearJob(key);
     return useJobsStore.subscribe(state => {
       if (state.jobs[key]?.status !== 'done') return;
-      setBid(getFromLocalStorage<StoredBid>('foundationBids', id));
       clearJob(key);
+      fetchTender<Record<string, unknown>, StoredBid>(id).then(tender => setBid(tender.bid), () => {});
     });
   }, [id, clearJob]);
 
@@ -113,11 +119,9 @@ export default function FoundationBidPage() {
       return;
     }
     setError(null);
-    // GSTIN and PAN never leave the vault: the bid is drafted with tokens and filled at download.
-    startBid(id, bid?.tenderTitle ?? String(reportTitle(report) ?? id), {
-      report,
-      companyProfile: { ...companyProfile, gstin: GSTIN_TOKEN, panNumber: PAN_TOKEN },
-    });
+    // The server drafts from the office's report and company file. GSTIN and PAN never leave the vault:
+    // the bid is drafted with tokens and filled at download.
+    startBid(id, bid?.tenderTitle ?? String(reportTitle(report) ?? id));
   };
 
   const handleDownload = async (cover: BidCover, file: string) => {
@@ -155,8 +159,7 @@ export default function FoundationBidPage() {
       ...bid,
       sections: bid.sections.map(s => (s.id === editing.id ? { ...s, content: editing.text, editedAt } : s)),
     };
-    saveToLocalStorage('foundationBids', updated);
-    setBid(updated);
+    keep(updated);
     setEditing(null);
   };
 
@@ -170,13 +173,12 @@ export default function FoundationBidPage() {
         return content === section.content ? section : { ...section, content, editedAt };
       }),
     };
-    saveToLocalStorage('foundationBids', updated);
-    setBid(updated);
+    keep(updated);
     const remembered = fills.filter(({ blank }) => isRememberable(blank));
     if (remembered.length) {
-      const answers = { ...savedAnswers, ...Object.fromEntries(remembered.map(f => [f.blank, f.value])) };
-      saveToLocalStorage<BlankAnswers>('blankAnswers', { id: 'company', answers });
-      setSavedAnswers(answers);
+      const fresh = Object.fromEntries(remembered.map(f => [f.blank, f.value]));
+      setSavedAnswers({ ...savedAnswers, ...fresh });
+      saveAnswers(fresh).then(setSavedAnswers, () => {});
     }
   };
 
@@ -189,8 +191,7 @@ export default function FoundationBidPage() {
       ...bid,
       sections: bid.sections.map(s => (s.id === checklist.id ? { ...s, content, editedAt: new Date().toISOString() } : s)),
     };
-    saveToLocalStorage('foundationBids', updated);
-    setBid(updated);
+    keep(updated);
   };
 
   // One PDF of the vault certificates in checklist order (the order of DOCUMENT_KINDS), built in the browser.

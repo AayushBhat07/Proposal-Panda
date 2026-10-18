@@ -1,12 +1,10 @@
 'use client';
 
 /**
- * Phase 5B: Tender Analysis Page
- * Main analysis view with tabs
- * Enhanced with loading, error states, and localStorage persistence
+ * Tender analysis: summary, compliance, clauses, BOQ and metadata tabs for one tender on the office register.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/state/authStore';
@@ -19,7 +17,7 @@ import MetadataPanel from '@/components/analysis/MetadataPanel';
 import { RISK_CHIP } from '@/components/analysis/risk';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
-import { getFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
+import { fetchTender, saveKeyDates } from '@/lib/data/api';
 import KeyDates from '@/components/analysis/KeyDates';
 import type { KeyDate } from '@/features/summarization/services/dates';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator/types/orchestration.types';
@@ -33,63 +31,42 @@ export default function TenderAnalysisPage() {
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<IntelligenceReport | null>(null);
   
-  // Load analysis data from localStorage
-  useEffect(() => {
-    const loadAnalysis = async () => {
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // Try to load from localStorage
-        const storedReport = getFromLocalStorage<any>('intelligenceReports', params.id);
-        
-        if (!storedReport) {
-          setError('Analysis not found. This tender may have been deleted or never processed.');
+  const load = useCallback(
+    () =>
+      fetchTender<IntelligenceReport, unknown>(params.id).then(
+        ({ report }) => {
+          setReport(report);
+          setError(null);
           setIsLoading(false);
-          return;
+        },
+        (err: Error) => {
+          setError(
+            err.message === 'No such tender.'
+              ? 'Analysis not found. This tender may have been deleted or never processed.'
+              : err.message
+          );
+          setIsLoading(false);
         }
-        
-        // Extract the report structure (remove id, fileName, uploadedAt)
-        const { id, fileName, uploadedAt, ...reportData } = storedReport;
-        setReport(reportData as IntelligenceReport);
-        setIsLoading(false);
-      } catch (err) {
-        console.error('Error loading analysis:', err);
-        setError('Failed to load analysis data. Please try again.');
-        setIsLoading(false);
-      }
-    };
-    
-    loadAnalysis();
-  }, [params.id]);
+      ),
+    [params.id]
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleRetry = () => {
     setIsLoading(true);
     setError(null);
-    
-    setTimeout(() => {
-      const storedReport = getFromLocalStorage<any>('intelligenceReports', params.id);
-      if (storedReport) {
-        const { id, fileName, uploadedAt, ...reportData } = storedReport;
-        setReport(reportData as IntelligenceReport);
-        setError(null);
-      } else {
-        setError('Analysis not found. This tender may have been deleted or never processed.');
-      }
-      setIsLoading(false);
-    }, 500);
+    load();
   };
 
-  // Corrigenda move dates; the corrected dates replace the ones read from the NIT in this browser's copy.
+  // Corrigenda move dates; the corrected dates replace the ones read from the NIT for everyone.
   const handleSaveDates = (keyDates: KeyDate[]) => {
-    const stored = getFromLocalStorage<IntelligenceReport & { id: string }>('intelligenceReports', params.id);
-    if (!stored || !report) return;
+    if (!report) return;
     const summary = { ...report.summary, metadata: { ...report.summary.metadata, keyDates } };
-    saveToLocalStorage('intelligenceReports', { ...stored, summary });
     setReport({ ...report, summary });
+    saveKeyDates(params.id, keyDates).catch((err: Error) => setError(err.message));
   };
 
   const handleBackToDashboard = () => {

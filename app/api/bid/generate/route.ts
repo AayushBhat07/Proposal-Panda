@@ -10,15 +10,21 @@ import {
   generateFoundationBid,
 } from '@/features/bid-generation/services/foundationBidGenerator';
 import type { IntelligenceReport } from '@/features/intelligence-orchestrator/types/orchestration.types';
-import type { CompanyProfile } from '@/types/onboarding.types';
+import { getDb } from '@/lib/db/client';
+import { getCompany } from '@/lib/db/repos/company';
+import { getTender, saveBid } from '@/lib/db/repos/tenders';
 
 export async function POST(request: NextRequest) {
   const auth = await requirePermission(request, 'bid.generate');
   if (auth instanceof NextResponse) return auth;
 
   const body = await request.json().catch(() => null);
-  const report = body?.report as IntelligenceReport | undefined;
-  const companyProfile = body?.companyProfile as CompanyProfile | undefined;
+  const tenderId = String(body?.tenderId ?? '');
+  const db = getDb();
+  // Both come from the office database, not the browser.
+  const report = getTender(db, tenderId)?.report as unknown as IntelligenceReport | undefined;
+  // The generator swaps GSTIN and PAN for tokens itself; the profile in the database has neither anyway.
+  const companyProfile = getCompany(db).companyProfile;
 
   if (!report?.summary?.metadata || !report.compliance) {
     return NextResponse.json({ error: 'A tender analysis report is required.' }, { status: 400 });
@@ -28,7 +34,11 @@ export async function POST(request: NextRequest) {
   }
 
   return streamProgress(
-    onProgress => generateFoundationBid(report, companyProfile, onProgress),
+    async onProgress => {
+      const bid = await generateFoundationBid(report, companyProfile, onProgress);
+      saveBid(db, tenderId, { ...bid, id: tenderId }, auth.email);
+      return { ...bid, id: tenderId };
+    },
     error => {
       const message = error instanceof Error ? error.message : 'Unknown error';
       console.error('[API] Bid generation failed:', message);

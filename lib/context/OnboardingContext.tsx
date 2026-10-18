@@ -1,64 +1,82 @@
 'use client';
 
 /**
- * Phase 5A: Onboarding Context
- * Manages onboarding state with localStorage persistence
+ * The office's company file and whether setup is done, from the shared database.
+ * Loaded once someone is signed in; saves go straight to the server.
  */
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import type { CompanyProfile, OnboardingState } from '@/types/onboarding.types';
+import { useAuthStore } from '@/state/authStore';
+import { fetchCompany, saveCompany } from '@/lib/data/api';
+import { importBrowserData } from '@/lib/data/browserImport';
 
 interface OnboardingContextValue extends OnboardingState {
-  /** False until localStorage has been read; don't redirect before then. */
+  /** False until the company file has been read for the signed-in user; don't redirect before then. */
   isLoaded: boolean;
+  /** Why the last save failed, if it did. */
+  saveError: string | null;
   setCompanyProfile: (profile: CompanyProfile) => void;
   completeOnboarding: () => void;
 }
 
 const OnboardingContext = createContext<OnboardingContextValue | null>(null);
 
-export function OnboardingProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<OnboardingState>({
-    companyProfile: null,
-    isComplete: false,
-  });
-  const [isLoaded, setIsLoaded] = useState(false);
+const EMPTY: OnboardingState = { companyProfile: null, isComplete: false };
 
-  // Load from localStorage on mount
+export function OnboardingProvider({ children }: { children: ReactNode }) {
+  const user = useAuthStore(s => s.user);
+  const authLoading = useAuthStore(s => s.isLoading);
+  const [state, setState] = useState<OnboardingState>(EMPTY);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const latest = useRef(state);
+  // Saves go one after another, so a quick profile save then "finish" can't land out of order.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+
   useEffect(() => {
-    const stored = localStorage.getItem('onboardingState');
-    if (stored) {
-      try {
-        setState(JSON.parse(stored));
-      } catch (error) {
-        console.error('Failed to load onboarding state:', error);
-      }
-    }
-    setIsLoaded(true);
+    if (!user) return;
+    let alive = true;
+    // Anything this browser stored before the database goes in first, so the file read next includes it.
+    importBrowserData()
+      .catch(() => {})
+      .then(fetchCompany)
+      .then(
+        loaded => {
+          if (!alive) return;
+          latest.current = loaded;
+          setState(loaded);
+          setLoadedFor(user.email);
+        },
+        () => alive && setLoadedFor(user.email)
+      );
+    return () => {
+      alive = false;
+    };
+  }, [user]);
+
+  const persist = useCallback((next: OnboardingState) => {
+    latest.current = next;
+    setState(next);
+    queue.current = queue.current.then(() =>
+      saveCompany(next).then(
+        () => setSaveError(null),
+        err => setSaveError(err instanceof Error ? err.message : 'The company file did not save.')
+      )
+    );
   }, []);
 
-  // Persist to localStorage on change
-  useEffect(() => {
-    if (isLoaded) localStorage.setItem('onboardingState', JSON.stringify(state));
-  }, [state, isLoaded]);
+  const setCompanyProfile = useCallback(
+    (profile: CompanyProfile) => persist({ ...latest.current, companyProfile: profile }),
+    [persist]
+  );
+  const completeOnboarding = useCallback(() => persist({ ...latest.current, isComplete: true }), [persist]);
 
-  const setCompanyProfile = (profile: CompanyProfile) => {
-    setState(prev => ({ ...prev, companyProfile: profile }));
-  };
-
-  const completeOnboarding = () => {
-    setState(prev => ({ ...prev, isComplete: true }));
-  };
+  const isLoaded = !authLoading && (!user || loadedFor === user.email);
+  const value = user ? state : EMPTY;
 
   return (
-    <OnboardingContext.Provider
-      value={{
-        ...state,
-        isLoaded,
-        setCompanyProfile,
-        completeOnboarding,
-      }}
-    >
+    <OnboardingContext.Provider value={{ ...value, isLoaded, saveError, setCompanyProfile, completeOnboarding }}>
       {children}
     </OnboardingContext.Provider>
   );

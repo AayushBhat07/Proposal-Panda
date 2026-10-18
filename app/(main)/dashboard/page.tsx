@@ -2,7 +2,7 @@
 
 /**
  * Dashboard: what is due, what needs doing this week, where every bid stands, how much earnest money is out,
- * and whether the company qualifies. Built from the tenders, bids and company file kept in this browser.
+ * and whether the company qualifies. Built from the office's tenders, bids and company file.
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -12,7 +12,7 @@ import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
 import { useJobsStore } from '@/state/jobsStore';
 import { useOnboarding } from '@/lib/context/OnboardingContext';
-import { getAllFromLocalStorage, getFromLocalStorage, setLocalStorage } from '@/services/storage/mockStorageService';
+import { fetchRegister, saveStage } from '@/lib/data/api';
 import { urgency } from '@/components/analysis/KeyDates';
 import { RISK_CHIP } from '@/components/analysis/risk';
 import { countdown, daysUntil, formatKeyDate, KEY_DATE_LABELS, type KeyDateKind } from '@/features/summarization/services/dates';
@@ -54,14 +54,14 @@ export default function DashboardPage() {
   const { can } = useAuthStore();
   const [data, setData] = useState<{ reports: StoredReport[]; bids: StoredBid[]; stages: Record<string, Stage> } | null>(null);
 
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     const load = () =>
-      setData({
-        reports: getAllFromLocalStorage<StoredReport>('intelligenceReports'),
-        bids: getAllFromLocalStorage<StoredBid>('foundationBids'),
-        stages: getFromLocalStorage<Record<string, Stage>>('tenderStages') ?? {},
-      });
-    // localStorage is only readable after mount.
+      fetchRegister<StoredReport, StoredBid>().then(
+        ({ reports, bids, stages }) => setData({ reports, bids, stages: stages as Record<string, Stage> }),
+        (err: Error) => setError(err.message)
+      );
     load();
     // An analysis or bid finishing in the background adds to what's stored.
     return useJobsStore.subscribe((state, prev) => {
@@ -71,14 +71,22 @@ export default function DashboardPage() {
 
   const pipeline = useMemo(() => (data ? buildPipeline(data.reports, data.bids, data.stages, companyProfile) : []), [data, companyProfile]);
 
-  if (!data) return <Spinner size="lg" className="mt-24 text-forest" />;
+  if (!data) {
+    return error ? (
+      <p role="alert" className="mx-auto mt-24 max-w-xl border-l-2 border-seal bg-seal-tint px-4 py-3 text-sm text-seal">
+        {error}
+      </p>
+    ) : (
+      <Spinner size="lg" className="mt-24 text-forest" />
+    );
+  }
 
   const setStage = (id: string, stage: Stage | '') => {
     const stages = { ...data.stages };
     if (stage) stages[id] = stage;
     else delete stages[id];
-    setLocalStorage('tenderStages', stages);
     setData({ ...data, stages });
+    saveStage(id, stage || null).catch((err: Error) => window.alert(err.message));
   };
 
   const sum = totals(pipeline);

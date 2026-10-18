@@ -10,9 +10,9 @@ import { Eye, EyeOff, FileText, Lock, ShieldCheck, Sparkles, Trash2, Upload } fr
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import { useAuthStore } from '@/state/authStore';
-import { useOnboarding } from '@/lib/context/OnboardingContext';
 import { MIN_PASSPHRASE, passphraseProblem, useVaultStore } from '@/lib/vault/vaultStore';
-import { mask, scrubStoredBids } from '@/lib/vault/bidVault';
+import { mask } from '@/lib/vault/bidVault';
+import { clearLegacyIdentifiers, legacyIdentifiers } from '@/lib/data/browserImport';
 import { SAMPLE_DATA_ENABLED, SAMPLE_DOCUMENTS, SAMPLE_IDENTIFIERS, SAMPLE_PASSPHRASE } from '@/lib/company/sample';
 import { ALLOWED_TYPES, DOCUMENT_KINDS, MAX_FILE_BYTES, type AccessEntry, type DocumentKind, type VaultDocument } from '@/lib/vault/vault';
 
@@ -24,7 +24,6 @@ const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateStyle:
 
 export default function VaultPage() {
   const { user } = useAuthStore();
-  const { companyProfile, setCompanyProfile } = useOnboarding();
   const vault = useVaultStore();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,18 +33,18 @@ export default function VaultPage() {
     check();
   }, [check]);
 
-  // Profiles saved before the vault existed hold GSTIN and PAN in the clear: move them in, then drop them.
+  // Profiles saved before the vault existed held GSTIN and PAN in the clear. They were kept back in this
+  // browser when its data moved to the office database; move them in, then drop them.
   useEffect(() => {
-    if (status !== 'unlocked' || !session || !companyProfile) return;
-    const { gstin, panNumber, ...rest } = companyProfile;
-    if (!gstin && !panNumber) return;
+    if (status !== 'unlocked' || !session) return;
+    const legacy = legacyIdentifiers();
+    if (!legacy) return;
     (async () => {
-      if (!identifiers) await session.saveIdentifiers({ gstin: gstin ?? '', pan: panNumber ?? '' });
-      scrubStoredBids({ gstin, panNumber });
-      setCompanyProfile(rest);
+      if (!identifiers) await session.saveIdentifiers({ gstin: legacy.gstin ?? '', pan: legacy.panNumber ?? '' });
+      clearLegacyIdentifiers();
       await refresh();
     })();
-  }, [status, session, identifiers, refresh, companyProfile, setCompanyProfile]);
+  }, [status, session, identifiers, refresh]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
