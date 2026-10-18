@@ -98,9 +98,11 @@ export default function FoundationBidPage() {
     saveBid(id, updated).catch((err: Error) => setError(`Your change is on screen but did not save: ${err.message}`));
   };
 
+  // Roles without the vault get a 403 from it, so they don't ask.
+  const mayUseVault = can('vault.use');
   useEffect(() => {
-    checkVault();
-  }, [checkVault]);
+    if (mayUseVault) checkVault().catch(() => {});
+  }, [checkVault, mayUseVault]);
 
   // The store saves the finished bid. Watching: show it. Coming back later: the load above already read it.
   useEffect(() => {

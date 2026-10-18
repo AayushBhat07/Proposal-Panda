@@ -10,3 +10,4 @@ Phase: Local database built (ADR-004, SQLite + Drizzle) as four stacked PRs; wai
 - [x] SDE-2 users and auth
 - [x] SDE-3 tender data server-side + browser import
 - [x] SDE-4 shared vault + audit log (P1)
+- [x] QA: persistence across restart, 23/23 pass; Viewer bid-page 403 fixed (reviews/2026-10-18-qa-report.md)
