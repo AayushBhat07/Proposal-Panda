@@ -1,5 +1,5 @@
 /**
- * How the bid uses the vault without the vault's contents ever leaving this computer.
+ * How the bid uses the vault without its contents ever reaching the server or the model in the clear.
  *
  * The bid is drafted with tokens in place of GSTIN and PAN, so neither the server, the model nor the stored
  * bid ever holds the real numbers. The page shows them masked, and the Word export puts the real values in

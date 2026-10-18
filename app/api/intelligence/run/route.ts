@@ -14,6 +14,7 @@ import { UnreadableDocumentError } from '@/features/summarization/services/textE
 import { streamProgress } from '@/lib/progress/stream';
 import { getDb } from '@/lib/db/client';
 import { addTender, isTenderId, tenderExists } from '@/lib/db/repos/tenders';
+import { record } from '@/lib/db/repos/audit';
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
           // On the office register before the browser hears it finished, so a closed tab loses nothing.
           const stored = { id: tenderId, fileName: file.name, uploadedAt: new Date().toISOString(), ...result.report };
           if (!addTender(getDb(), stored, auth.email)) throw new Error(`Tender ${tenderId} was added twice`);
+          record(getDb(), auth.email, 'analysed tender', tenderId);
           return stored;
         } finally {
           await unlink(filePath).catch(err => console.warn(`[API] Failed to delete temp file: ${err.message}`));

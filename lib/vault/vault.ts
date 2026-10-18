@@ -1,7 +1,7 @@
 /**
- * The document vault: GSTIN, PAN and company certificates, kept encrypted on this computer only.
- * Nothing in here is sent to the server or the model. Storage is IndexedDB in the browser; tests pass an
- * in-memory backend.
+ * The document vault: GSTIN, PAN and company certificates, sealed in the browser before they are stored.
+ * Only sealed records leave the browser: the office server stores them (serverBackend.ts) without ever holding
+ * a key, and nothing goes to the model. Older installs kept them in IndexedDB; tests pass an in-memory backend.
  */
 
 import { PBKDF2_ITERATIONS, deriveKey, open, openJson, randomBytes, seal, sealJson, type Sealed } from './crypto';
@@ -39,7 +39,16 @@ export interface VaultDocument {
 export interface AccessEntry {
   at: string;
   by: string;
-  action: 'unlocked' | 'uploaded' | 'opened' | 'deleted' | 'saved identifiers' | 'exported bid' | 'built bundle';
+  action:
+    | 'unlocked'
+    | 'uploaded'
+    | 'opened'
+    | 'deleted'
+    | 'saved identifiers'
+    | 'exported bid'
+    | 'built bundle'
+    | 'moved to server'
+    | 'erased';
   detail?: string;
 }
 
@@ -71,7 +80,7 @@ export class WrongPassphraseError extends Error {
   }
 }
 
-/** When the vault on this computer was created, or null if there is none. */
+/** When the vault was created, or null if there is none. */
 export async function vaultCreatedAt(backend: Backend): Promise<string | null> {
   const header = await backend.get<Header>(HEADER);
   return header ? (header.createdAt ?? '') : null;
@@ -82,7 +91,7 @@ export async function vaultExists(backend: Backend): Promise<boolean> {
 }
 
 export async function createVault(backend: Backend, passphrase: string): Promise<CryptoKey> {
-  if (await vaultExists(backend)) throw new Error('A vault already exists on this computer.');
+  if (await vaultExists(backend)) throw new Error('A vault already exists.');
   const salt = randomBytes(16);
   const key = await deriveKey(passphrase, salt);
   const verifier = await seal(key, HEADER, new TextEncoder().encode(VERIFIER));
@@ -98,7 +107,7 @@ export async function createVault(backend: Backend, passphrase: string): Promise
 
 export async function unlockVault(backend: Backend, passphrase: string): Promise<CryptoKey> {
   const header = await backend.get<Header>(HEADER);
-  if (!header) throw new Error('No vault on this computer yet.');
+  if (!header) throw new Error('No vault yet.');
   // A tampered count could make unlocking hang or weaken the key.
   if (!(header.iterations >= PBKDF2_ITERATIONS && header.iterations <= 5_000_000)) {
     throw new Error('The vault header is damaged.');
@@ -112,23 +121,37 @@ export async function unlockVault(backend: Backend, passphrase: string): Promise
   return key;
 }
 
-/** Operations on an unlocked vault. Every read of a file and every change is written to the access log. */
-export function vaultSession(backend: Backend, key: CryptoKey, user: string) {
+/** Where the access log goes. Details never carry file names, which can contain the PAN. */
+export interface AccessLog {
+  add(entry: AccessEntry): Promise<void>;
+  read(): Promise<AccessEntry[]>;
+}
+
+/**
+ * Operations on an unlocked vault. Every read of a file and every change is written to the access log:
+ * the office server's log when one is given, else a log sealed inside the vault itself.
+ */
+export function vaultSession(backend: Backend, key: CryptoKey, user: string, accessLog?: AccessLog) {
   const read = async <T>(slot: string): Promise<T | undefined> => {
     const sealed = await backend.get<Sealed>(slot);
     return sealed ? openJson<T>(key, slot, sealed) : undefined;
   };
   const write = async (slot: string, value: unknown) => backend.put(slot, await sealJson(key, slot, value));
 
-  const log = async (action: AccessEntry['action'], detail?: string) => {
-    const entries = (await read<AccessEntry[]>('log')) ?? [];
-    entries.unshift({ at: new Date().toISOString(), by: user, action, detail });
-    await write('log', entries.slice(0, LOG_LIMIT));
+  const journal: AccessLog = accessLog ?? {
+    add: async entry => {
+      const entries = (await read<AccessEntry[]>('log')) ?? [];
+      entries.unshift(entry);
+      await write('log', entries.slice(0, LOG_LIMIT));
+    },
+    read: async () => (await read<AccessEntry[]>('log')) ?? [],
   };
+  const log = (action: AccessEntry['action'], detail?: string) =>
+    journal.add({ at: new Date().toISOString(), by: user, action, detail });
 
   return {
     log,
-    readLog: async () => (await read<AccessEntry[]>('log')) ?? [],
+    readLog: () => journal.read(),
 
     identifiers: () => read<Identifiers>('identifiers'),
     async saveIdentifiers(ids: Identifiers) {
@@ -156,7 +179,7 @@ export function vaultSession(backend: Backend, key: CryptoKey, user: string) {
       };
       await backend.put(`file:${doc.id}`, await seal(key, `file:${doc.id}`, bytes));
       await write(`doc:${doc.id}`, doc);
-      await log('uploaded', `${DOCUMENT_KINDS[kind]}: ${name}`);
+      await log('uploaded', DOCUMENT_KINDS[kind]);
       return doc;
     },
 
@@ -165,14 +188,14 @@ export function vaultSession(backend: Backend, key: CryptoKey, user: string) {
       const sealed = await backend.get<Sealed>(`file:${doc.id}`);
       if (!sealed) throw new Error('This document is missing from the vault.');
       const bytes = await open(key, `file:${doc.id}`, sealed);
-      if (reason === 'opened') await log('opened', doc.name);
+      if (reason === 'opened') await log('opened', DOCUMENT_KINDS[doc.kind]);
       return bytes;
     },
 
     async deleteDocument(doc: VaultDocument) {
       await backend.delete(`file:${doc.id}`);
       await backend.delete(`doc:${doc.id}`);
-      await log('deleted', doc.name);
+      await log('deleted', DOCUMENT_KINDS[doc.kind]);
     },
   };
 }

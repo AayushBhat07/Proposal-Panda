@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Vault state for the page. The key exists only in this store's memory: it is gone on reload, on sign-out,
- * and after 15 minutes without activity.
+ * Vault state for the page. The sealed records live on the office server; the key exists only in this store's
+ * memory: it is gone on reload, on sign-out, and after 15 minutes without activity.
  */
 
 import { create } from 'zustand';
@@ -19,6 +19,7 @@ import {
   type VaultDocument,
   type VaultSession,
 } from './vault';
+import { moveLocalVault, serverAccessLog, serverBackend } from './serverBackend';
 
 export const AUTO_LOCK_MS = 15 * 60 * 1000;
 export const MIN_PASSPHRASE = 12;
@@ -27,6 +28,8 @@ const RETRY_AFTER_MS = 30 * 1000;
 
 interface VaultStore {
   status: 'checking' | 'none' | 'locked' | 'unlocked';
+  /** What happened to a vault this browser kept before the office vault: moved up, or kept because the office has one. */
+  localVault: 'none' | 'moved' | 'kept';
   createdAt: string | null;
   session: VaultSession | null;
   identifiers: Identifiers | null;
@@ -42,7 +45,8 @@ interface VaultStore {
 }
 
 let backend: Backend | null = null;
-const store = () => (backend ??= indexedDbBackend());
+const store = () => (backend ??= serverBackend());
+let localChecked = false;
 
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 const ACTIVITY = ['pointerdown', 'keydown'] as const;
@@ -78,6 +82,7 @@ export const useVaultStore = create<VaultStore>((set, get) => {
 
   return {
     status: 'checking',
+    localVault: 'none',
     createdAt: null,
     session: null,
     identifiers: null,
@@ -87,6 +92,12 @@ export const useVaultStore = create<VaultStore>((set, get) => {
 
     check: async () => {
       if (get().status === 'unlocked') return;
+      if (!localChecked) {
+        localChecked = true;
+        const localVault = await moveLocalVault(indexedDbBackend(), store());
+        if (localVault === 'moved') await serverAccessLog.add({ at: '', by: '', action: 'moved to server' });
+        set({ localVault });
+      }
       const createdAt = await vaultCreatedAt(store());
       set({ createdAt, status: createdAt === null ? 'none' : 'locked' });
     },
@@ -97,14 +108,14 @@ export const useVaultStore = create<VaultStore>((set, get) => {
       const started = generation;
       const key = await createVault(store(), passphrase);
       set({ createdAt: (await vaultCreatedAt(store())) ?? null });
-      await opened(vaultSession(store(), key, user), started);
+      await opened(vaultSession(store(), key, user, serverAccessLog), started);
     },
 
     unlock: async (passphrase, user) => {
       if (Date.now() < get().retryAt) throw new Error('Too many wrong passphrases. Wait 30 seconds and try again.');
       const started = generation;
       try {
-        const session = vaultSession(store(), await unlockVault(store(), passphrase), user);
+        const session = vaultSession(store(), await unlockVault(store(), passphrase), user, serverAccessLog);
         if (started !== generation) return;
         await session.log('unlocked');
         await opened(session, started);
