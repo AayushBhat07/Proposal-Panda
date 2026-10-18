@@ -24,7 +24,7 @@ browser's localStorage and nothing has run on real models yet.
 10. Remove fake UI: market ticker, subscription box, hardcoded date/location/division; Clauses/BOQ placeholder tabs.
 11. Repo hygiene: root PHASE-*.md reports → docs/; fix 14 pre-existing lint errors.
 
-## Open decision: persistence stack (depends on deployment target)
+## Persistence stack: decided 2026-10-18, SQLite + Drizzle (ADR-004)
 | Option | Fits | Cost |
 |---|---|---|
 | SQLite + Drizzle, single server next to Ollama (recommended if on-prem) | Local-first, data stays in the office, one box | Single-node; move to Postgres later via same ORM |
