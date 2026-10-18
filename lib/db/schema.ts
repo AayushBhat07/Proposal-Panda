@@ -3,7 +3,7 @@
  * Reports and bids are stored whole as JSON: they are only ever loaded whole, and their shapes live in TypeScript.
  */
 
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, blob } from 'drizzle-orm/sqlite-core';
 
 const now = () => new Date().toISOString();
 
@@ -43,6 +43,16 @@ export const tenders = sqliteTable('tenders', {
   stage: text('stage'),
   uploadedBy: text('uploaded_by'),
   createdAt: text('created_at').notNull().$defaultFn(now),
+});
+
+/** The NIT file each tender was analysed from, kept so anyone can open the original again. */
+export const tenderFiles = sqliteTable('tender_files', {
+  id: text('id')
+    .primaryKey()
+    .references(() => tenders.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  data: blob('data', { mode: 'buffer' }).notNull(),
 });
 
 /** One bid per tender (id = tender id). GSTIN and PAN stay as tokens; the vault fills them at download. */

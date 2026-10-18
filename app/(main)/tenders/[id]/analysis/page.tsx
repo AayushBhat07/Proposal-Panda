@@ -30,12 +30,14 @@ export default function TenderAnalysisPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<IntelligenceReport | null>(null);
+  const [hasFile, setHasFile] = useState(false);
   
   const load = useCallback(
     () =>
       fetchTender<IntelligenceReport, unknown>(params.id).then(
-        ({ report }) => {
+        ({ report, hasFile }) => {
           setReport(report);
+          setHasFile(hasFile);
           setError(null);
           setIsLoading(false);
         },
@@ -112,9 +114,21 @@ export default function TenderAnalysisPage() {
         <Link href="/register" className="inline-flex min-h-11 items-center text-sm text-ink-soft hover:text-ink">
           ← Register
         </Link>
-        {can('bid.view') && (
-          <Button onClick={() => router.push(`/tenders/${params.id}/bid`)}>Prepare the bid</Button>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {hasFile && (
+            <a
+              href={`/api/tenders/${encodeURIComponent(params.id)}/file`}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex min-h-11 items-center text-sm text-ink-soft underline underline-offset-4 hover:text-ink"
+            >
+              Open the NIT
+            </a>
+          )}
+          {can('bid.view') && (
+            <Button onClick={() => router.push(`/tenders/${params.id}/bid`)}>Prepare the bid</Button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3">

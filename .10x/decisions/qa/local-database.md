@@ -10,6 +10,6 @@ Stored in SQLite: users, company file, saved blank answers, tenders (report, key
 (identifiers, certificate metadata and files, as ciphertext), audit log.
 Still in the browser, by design: the session cookie, the "plain view" toggle, running-job progress (memory only),
 and an empty `proposalpanda-vault` IndexedDB opened once to move an old browser vault to the server.
-Not stored anywhere: the uploaded NIT file itself. Only its analysis is kept; the temp file is deleted.
+The uploaded NIT file is kept in `tender_files` (added after the first run, on the user's call); tenders imported from old browsers have none.
 
 Bug found and fixed: the bid page asked the vault for status for every role, so a Viewer hit an uncaught 403.
