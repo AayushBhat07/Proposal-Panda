@@ -30,9 +30,8 @@ export async function requirePermission(
 ): Promise<Session | NextResponse> {
   const user = await getCurrentUser(request);
   if (!user) {
-    const response = NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
-    response.cookies.delete(SESSION_COOKIE);
-    return response;
+    // The cookie is left alone: a slow 401 must not wipe a cookie a newer sign-in just set.
+    return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
   }
   if (permission && !can(user.role, permission)) {
     return NextResponse.json({ error: 'Your role is not allowed to do this.' }, { status: 403 });
