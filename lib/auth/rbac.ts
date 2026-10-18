@@ -11,11 +11,11 @@ export type Permission =
   | 'tender.upload' // upload a tender and run analysis
   | 'bid.view' // read a generated bid
   | 'bid.generate' // generate a foundation bid
-  | 'vault.use'; // open the encrypted document vault on this computer
+  | 'vault.use' // open the encrypted document vault
+  | 'user.manage'; // add people, change roles, disable accounts
 
 const ROLE_PERMISSIONS: Record<RoleName, readonly Permission[]> = {
-  // Admin differs from BidWriter only once user management exists; kept so that has an owner.
-  Admin: ['tender.view', 'tender.upload', 'bid.view', 'bid.generate', 'vault.use'],
+  Admin: ['tender.view', 'tender.upload', 'bid.view', 'bid.generate', 'vault.use', 'user.manage'],
   BidWriter: ['tender.view', 'tender.upload', 'bid.view', 'bid.generate', 'vault.use'],
   TenderAnalyst: ['tender.view', 'tender.upload', 'bid.view'],
   Viewer: ['tender.view', 'bid.view'],
@@ -42,6 +42,7 @@ const ROUTE_PERMISSIONS: Array<[RegExp, Permission]> = [
   [/^\/api\/bid\/generate\/?$/, 'bid.generate'],
   [/^\/tenders\/[^/]+\/bid\/?$/, 'bid.view'],
   [/^\/vault\/?$/, 'vault.use'],
+  [/^\/(api\/)?users(\/|$)/, 'user.manage'],
   [/^\/tenders(\/|$)/, 'tender.view'],
 ];
 

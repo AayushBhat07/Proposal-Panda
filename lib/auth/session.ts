@@ -9,6 +9,10 @@ export const SESSION_COOKIE = 'pp_session';
 export const SESSION_TTL_SECONDS = 60 * 60 * 8;
 
 export interface Session {
+  /** users.id */
+  uid: string;
+  /** users.session_version when the cookie was issued; a bump signs this cookie out. */
+  ver: number;
   email: string;
   name: string;
   role: RoleName;
@@ -68,6 +72,7 @@ export async function verifySession(token: string | undefined): Promise<Session 
     if (!valid) return null;
     const session = JSON.parse(new TextDecoder().decode(fromBase64Url(payload))) as Session;
     if (!isRole(session.role) || typeof session.exp !== 'number') return null;
+    if (typeof session.uid !== 'string' || typeof session.ver !== 'number') return null;
     if (session.exp < Math.floor(Date.now() / 1000)) return null;
     return session;
   } catch {
