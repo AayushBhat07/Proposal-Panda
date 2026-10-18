@@ -36,6 +36,8 @@ import {
   withIdentifiers,
 } from '@/lib/vault/bidVault';
 import { buildBundle } from '@/lib/vault/bundle';
+import SiteOffice from '@/components/site-office/SiteOffice';
+import { bidJobKey, useJobsStore } from '@/state/jobsStore';
 import { DOCUMENT_KINDS } from '@/lib/vault/vault';
 
 const COVERS: Array<{ cover: BidCover; label: string; title: string; file: string; note?: string }> = [
@@ -50,6 +52,11 @@ const COVERS: Array<{ cover: BidCover; label: string; title: string; file: strin
 ];
 
 type StoredBid = FoundationBid & { id: string };
+
+const reportTitle = (report: Record<string, unknown>) => {
+  const metadata = (report.summary as { metadata?: { nameOfWork?: string; tenderTitle?: string } } | undefined)?.metadata;
+  return metadata?.nameOfWork ?? metadata?.tenderTitle;
+};
 /** Answers to blanks, kept across bids. One record per browser, like the company profile. */
 type BlankAnswers = { id: 'company'; answers: Record<string, string> };
 
@@ -61,8 +68,14 @@ export default function FoundationBidPage() {
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
   const [bid, setBid] = useState<StoredBid | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The run lives in the jobs store so it keeps going if the user opens another page.
+  const job = useJobsStore(state => state.jobs[bidJobKey(id)]);
+  const startBid = useJobsStore(state => state.startBid);
+  const clearJob = useJobsStore(state => state.clearJob);
+  const isGenerating = job?.status === 'running';
+  /** Why the last draft failed; keeps the office on screen with the crew stopped. */
+  const draftError = job?.status === 'error' ? job.error : null;
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [savedAnswers, setSavedAnswers] = useState<Record<string, string>>({});
   const blankCursor = useRef(-1);
@@ -71,6 +84,8 @@ export default function FoundationBidPage() {
   const vaultOpen = vault.status === 'unlocked' && can('vault.use');
 
   useEffect(() => {
+    // Browser storage is only readable after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReport(getFromLocalStorage<Record<string, unknown>>('intelligenceReports', id));
     setBid(getFromLocalStorage<StoredBid>('foundationBids', id));
     setSavedAnswers(getFromLocalStorage<BlankAnswers>('blankAnswers', 'company')?.answers ?? {});
@@ -81,33 +96,28 @@ export default function FoundationBidPage() {
     checkVault();
   }, [checkVault]);
 
+  // The store saves the finished bid. Watching: show it. Coming back later: the load above already read it.
+  useEffect(() => {
+    const key = bidJobKey(id);
+    if (useJobsStore.getState().jobs[key]?.status === 'done') clearJob(key);
+    return useJobsStore.subscribe(state => {
+      if (state.jobs[key]?.status !== 'done') return;
+      setBid(getFromLocalStorage<StoredBid>('foundationBids', id));
+      clearJob(key);
+    });
+  }, [id, clearJob]);
+
   const handleGenerate = async () => {
     if (!report) return;
     if (bid?.sections.some(s => s.editedAt) && !window.confirm('Redrafting replaces the sections you edited. Continue?')) {
       return;
     }
-    setIsGenerating(true);
     setError(null);
-    try {
-      const response = await fetch('/api/bid/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // GSTIN and PAN never leave the vault: the bid is drafted with tokens and filled at download.
-        body: JSON.stringify({
-          report,
-          companyProfile: { ...companyProfile, gstin: GSTIN_TOKEN, panNumber: PAN_TOKEN },
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.details || data.error || 'Bid generation failed.');
-      const stored: StoredBid = { ...data, id };
-      saveToLocalStorage('foundationBids', stored);
-      setBid(stored);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bid generation failed.');
-    } finally {
-      setIsGenerating(false);
-    }
+    // GSTIN and PAN never leave the vault: the bid is drafted with tokens and filled at download.
+    startBid(id, bid?.tenderTitle ?? String(reportTitle(report) ?? id), {
+      report,
+      companyProfile: { ...companyProfile, gstin: GSTIN_TOKEN, panNumber: PAN_TOKEN },
+    });
   };
 
   const handleDownload = async (cover: BidCover, file: string) => {
@@ -299,10 +309,8 @@ export default function FoundationBidPage() {
         </p>
       )}
 
-      {isGenerating && (
-        <p role="status" className="border-l-2 border-ochre bg-ochre-tint px-4 py-3 text-sm text-ink">
-          Drafting each section on the local model. This can take several minutes on CPU.
-        </p>
+      {(isGenerating || draftError) && (
+        <SiteOffice pipeline="bid" events={job?.events ?? []} title="Drafting the foundation bid" error={draftError} />
       )}
 
       {!bid && !isGenerating && (

@@ -11,6 +11,8 @@ import type {
 } from '../types/summarization.types';
 import { TenderSummarizationService } from './summarizer';
 import { extractTextFromDocx, extractTextFromPlainText, extractChapters, cleanText } from './textExtractor';
+import { trackStep } from '@/lib/progress/stream';
+import { STEP_LABELS } from '@/lib/progress/events';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -29,21 +31,24 @@ export async function summarizeTenderFromFile(
 
   // Extract text
   const ext = path.extname(filePath).toLowerCase();
-  let fullText: string;
-
-  if (ext === '.docx' || ext === '.pdf') {
-    fullText = await extractTextFromDocx(filePath);
-  } else if (ext === '.txt' || ext === '.md') {
-    fullText = extractTextFromPlainText(filePath);
-  } else {
-    throw new Error(`Unsupported file format: ${ext}`);
-  }
-
-  // Clean text
-  fullText = cleanText(fullText);
-
-  // Extract chapters
-  const chapters = extractChapters(fullText);
+  const { fullText, chapters } = await trackStep(
+    options.onProgress,
+    'extract',
+    STEP_LABELS.extract,
+    async () => {
+      let text: string;
+      if (ext === '.docx' || ext === '.pdf') {
+        text = await extractTextFromDocx(filePath);
+      } else if (ext === '.txt' || ext === '.md') {
+        text = extractTextFromPlainText(filePath);
+      } else {
+        throw new Error(`Unsupported file format: ${ext}`);
+      }
+      text = cleanText(text);
+      return { fullText: text, chapters: extractChapters(text) };
+    },
+    r => `${r.fullText.split(/\s+/).filter(Boolean).length.toLocaleString('en-IN')} words read`
+  );
   console.log(`   Extracted ${chapters.length} chapters\n`);
 
   // Create input

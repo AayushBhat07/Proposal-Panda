@@ -1,0 +1,171 @@
+/* Sprite animation for the site office. Every loop uses steps() so the pixel art never blurs.
+   Animated groups never carry a transform attribute; CSS transforms on SVG use user units. */
+
+.paused,
+.paused :global(*) {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene :global(*) {
+    animation: none !important;
+    transition: none !important;
+  }
+  .scene .walking .legsB {
+    opacity: 0;
+  }
+}
+
+.pixel {
+  image-rendering: pixelated;
+  shape-rendering: crispEdges;
+}
+
+/* idle: slow breathing and a sip of chai */
+.idle .head {
+  animation: breathe 2.4s steps(1) infinite;
+}
+.idle .cup {
+  animation: sip 4.8s steps(1) infinite;
+}
+
+/* working: quick typing bob */
+.working .head,
+.starting .head {
+  animation: bob 0.5s steps(1) infinite;
+}
+.working .handL {
+  animation: blink 0.3s steps(1) infinite;
+}
+.working .handR {
+  animation: blink 0.3s steps(1) infinite reverse;
+}
+
+/* redoing: scratching the hard hat */
+.redoing .scratch {
+  animation: bob 0.35s steps(1) infinite;
+}
+.redoing .head {
+  animation: tilt 1.2s steps(1) infinite;
+}
+
+/* done: a few happy jumps, then the thumbs-up stays */
+.done .body {
+  animation: jump 0.5s steps(1) 4;
+}
+
+/* needs you: the cone blinks for attention */
+.needs .cone {
+  animation: blink 1s steps(1) infinite;
+}
+
+/* failed: slumped and greyed */
+.failed .head {
+  transform: translateY(2px);
+}
+.failed .figure {
+  filter: grayscale(0.7) brightness(0.9);
+}
+
+/* walking: alternate the leg frames, small bob */
+.walking .legsA {
+  animation: blink 0.36s steps(1) infinite;
+}
+.walking .legsB {
+  animation: blink 0.36s steps(1) infinite reverse;
+}
+.walking .body {
+  animation: bob 0.36s steps(1) infinite;
+}
+.legsB,
+.walking .legsStand {
+  opacity: 0;
+}
+.legsA {
+  opacity: 0;
+}
+.walking .legsA {
+  opacity: 1;
+}
+.walking .legsB {
+  opacity: 1;
+}
+
+/* monitor and stamp on a busy desk */
+.active .screen {
+  animation: flicker 0.9s steps(1) infinite;
+}
+.active .press {
+  animation: bob 0.6s steps(1) infinite;
+}
+
+@keyframes breathe {
+  0%,
+  60% {
+    transform: translateY(0);
+  }
+  61%,
+  100% {
+    transform: translateY(1px);
+  }
+}
+@keyframes bob {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(1px);
+  }
+}
+@keyframes tilt {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(1px);
+  }
+}
+@keyframes jump {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes flicker {
+  0% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 0.8;
+  }
+}
+@keyframes sip {
+  0%,
+  70% {
+    transform: translate(0, 0);
+  }
+  71%,
+  88% {
+    transform: translate(-3px, -4px);
+  }
+  89%,
+  100% {
+    transform: translate(0, 0);
+  }
+}
