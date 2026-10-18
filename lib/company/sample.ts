@@ -72,6 +72,7 @@ export const SAMPLE_DOCUMENTS: Array<{ kind: DocumentKind; file: string }> = [
 
 /** Specimen answers for bid blanks, first match wins; the patterns are the blanks bidTemplates leaves. */
 const SAMPLE_BLANKS: Array<[RegExp, (p: ReturnType<typeof sampleProfile>, today: string) => string]> = [
+  [/^\[attach\]$/i, () => '(specimen enclosed)'],
   [/start date|order date/i, p => p.similarWorks[0].start],
   [/completion date/i, p => p.similarWorks[0].completion],
   [/dd\/mm\/yyyy|date/i, (_, today) => today],
@@ -106,15 +107,15 @@ const SAMPLE_BLANKS: Array<[RegExp, (p: ReturnType<typeof sampleProfile>, today:
 ];
 
 /**
- * Fills every blank with the sample contractor's details, for trying a bid end to end. [attach] lines are left
- * for the vault, and model flags ([Edit needed: …]) and single letters are left for a person.
+ * Fills every blank with the sample contractor's details, for trying a bid end to end. Model flags
+ * ([Edit needed: …]) are left for a person; [attach] lines the vault didn't fill become a specimen note.
  */
 export function fillSampleBlanks(text: string, date = new Date()): string {
   const profile = sampleProfile(date);
   const today = date.toLocaleDateString('en-GB');
   return splitBlanks(text)
     .map(({ text: part, blank }) => {
-      if (!blank || part === '[attach]' || /^\[(edit needed|[a-z]\])/i.test(part)) return part;
+      if (!blank || /^\[edit needed/i.test(part)) return part;
       return SAMPLE_BLANKS.find(([pattern]) => pattern.test(part))?.[1](profile, today) ?? 'Specimen';
     })
     .join('');

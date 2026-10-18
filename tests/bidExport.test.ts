@@ -8,7 +8,7 @@ import type { FoundationBid } from '../features/bid-generation/types/bid.types';
 
 test('counts and splits the placeholders a draft leaves', () => {
   const text = 'Inspected on [dd/mm/yyyy]. Bid capacity = ([A] × [N] × 2) − [B] = ₹ [___].';
-  assert.equal(countBlanks(text), 5);
+  assert.equal(countBlanks(text), 2, 'formula symbols [A] [N] [B] are not blanks');
   assert.deepEqual(
     splitBlanks('Date: [dd/mm/yyyy] done').map(p => [p.text, p.blank]),
     [['Date: ', false], ['[dd/mm/yyyy]', true], [' done', false]]

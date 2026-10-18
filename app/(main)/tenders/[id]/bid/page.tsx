@@ -203,10 +203,11 @@ export default function FoundationBidPage() {
     keep(updated);
   };
 
-  // Trying the app: every blank gets the sample contractor's details, and with the vault open its certificates
-  // are attached. Not remembered as the office's answers.
+  // Trying the app: every blank gets the sample contractor's details. With the vault open its certificates are
+  // attached first; any [attach] left gets a specimen note. Not remembered as the office's answers.
   const handleSampleFill = () => {
     if (!bid) return;
+    if (can('vault.use') && !vaultOpen && !window.confirm('The vault is locked, so its certificates won\'t be attached; the checklist gets specimen notes instead. Fill anyway?')) return;
     const editedAt = new Date().toISOString();
     keep({
       ...bid,

@@ -5,7 +5,8 @@
  * [Annexure __], [attach]. The bid is ready to submit when none are left.
  */
 
-const BLANK = /\[[^[\]\n]{1,200}\]/g;
+// Two characters or more: [A], [N], [B] in the bid-capacity formula are symbols, not blanks.
+const BLANK = /\[[^[\]\n]{2,200}\]/g;
 
 export function countBlanks(text: string): number {
   return text.match(BLANK)?.length ?? 0;
