@@ -67,3 +67,15 @@ and clears them only after a 200. UI-only keys (plain view toggle, latest tender
 ## Testing
 `createDb(':memory:')` + run migrations per test file. Repo tests and route-handler tests with a real cookie.
 Keep `tests/vault.test.ts` passing with both the memory and the server backend.
+
+## As built (2026-10-18)
+- `tenders` holds the stored report itself (id = tender id); there is no separate `intelligence_reports` table,
+  because a tender only ever has one report. `bids.id` is the tender id.
+- No `company.edit` permission: editing the company file stays on `bid.generate` (Admin, Bid Writer), as before.
+  Added `user.manage` and `audit.view` (Admin only).
+- `/api/tenders/[id]` PATCH takes `keyDates` (corrigenda) and `stage`; bid drafting reads the report and company
+  file from the database and takes only `{ tenderId }`.
+- Vault log: the page reports its actions to `/api/audit`; the server stamps user and time and the row can't be
+  removed. Details name the document type, never the file name. Erasing the office vault is Admin only.
+- A browser-only vault from before is copied up as-is (header last) on first visit if the office has none.
+- Cookies are not cleared on 401: a slow 401 from before sign-in could otherwise delete the fresh cookie.

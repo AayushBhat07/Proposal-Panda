@@ -14,6 +14,13 @@ brew install poppler tesseract   # optional: reads scanned PDFs with OCR
 npm run dev                      # http://localhost:3000
 ```
 
+Everything the office shares (tenders, bids, the company file, users, the sealed vault and the activity log) is
+in one SQLite file, `data/proposalpanda.db` (`DATABASE_PATH`). It is created and migrated on first start. Back
+it up by copying it while the app is stopped. In development an empty database gets the four demo accounts;
+in production, create the first Admin with
+`ADMIN_PASSWORD='…' npm run db:create-admin -- owner@firm.in "Owner Name"` and add everyone else on the
+Users page. After changing `lib/db/schema.ts`, run `npm run db:generate` and commit the new file in `drizzle/`.
+
 No Ollama available? `npm run mock-ollama` starts a stand-in that returns placeholder text, so you can
 click through the whole flow. Point `OLLAMA_BASE_URL` at it if it isn't on port 11434.
 
@@ -59,12 +66,17 @@ Defined once in `lib/auth/rbac.ts`; enforced in `proxy.ts` and in each API route
 | Tender Analyst | analyst@proposalpanda.dev | ✓ | | ✓ |
 | Viewer (owner, reviewer, management) | viewer@proposalpanda.dev | | | ✓ |
 
-The role is carried in a signed HttpOnly cookie, so it can't be changed from the browser. Users are a
-demo directory in `lib/auth/users.ts`; swap `findUser()` for a real user store.
+Admins also manage users (Users page) and read the activity log. Bid Writers and Admins open the
+document vault.
+
+Users live in the database with scrypt-hashed passwords. The session is a signed HttpOnly cookie, and each
+API route re-reads the user, so a role change applies on the next request and turning someone off (or
+resetting their password) signs them out.
 
 ## Known limits
 
-- Reports and bids are stored in the browser's localStorage, so they aren't shared between users or devices.
+- One office server: SQLite allows one writer at a time, which is fine for an office, not for a hosted
+  multi-company service (the Drizzle schema can move to Postgres).
 - Scanned PDFs are read with OCR only when `pdftoppm` and `tesseract` are installed (first 40 pages;
   add the `hin` tesseract language for Hindi). Without them the upload fails with a message saying so.
 - Only .pdf and .docx are accepted; old .doc files and Excel BOQs must be converted first.

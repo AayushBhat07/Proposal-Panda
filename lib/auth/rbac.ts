@@ -12,10 +12,11 @@ export type Permission =
   | 'bid.view' // read a generated bid
   | 'bid.generate' // generate a foundation bid
   | 'vault.use' // open the encrypted document vault
-  | 'user.manage'; // add people, change roles, disable accounts
+  | 'user.manage' // add people, change roles, disable accounts
+  | 'audit.view'; // read the office access log
 
 const ROLE_PERMISSIONS: Record<RoleName, readonly Permission[]> = {
-  Admin: ['tender.view', 'tender.upload', 'bid.view', 'bid.generate', 'vault.use', 'user.manage'],
+  Admin: ['tender.view', 'tender.upload', 'bid.view', 'bid.generate', 'vault.use', 'user.manage', 'audit.view'],
   BidWriter: ['tender.view', 'tender.upload', 'bid.view', 'bid.generate', 'vault.use'],
   TenderAnalyst: ['tender.view', 'tender.upload', 'bid.view'],
   Viewer: ['tender.view', 'bid.view'],
@@ -43,6 +44,8 @@ const ROUTE_PERMISSIONS: Array<[RegExp, Permission]> = [
   [/^\/tenders\/[^/]+\/bid\/?$/, 'bid.view'],
   [/^\/vault\/?$/, 'vault.use'],
   [/^\/(api\/)?users(\/|$)/, 'user.manage'],
+  [/^\/activity\/?$/, 'audit.view'],
+  [/^\/api\/vault(\/|$)/, 'vault.use'],
   [/^\/tenders(\/|$)/, 'tender.view'],
 ];
 

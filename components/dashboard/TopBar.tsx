@@ -19,6 +19,7 @@ const NAV_ITEMS: Array<{ label: string; href: string; permission?: Permission }>
   { label: 'Company', href: '/company' },
   { label: 'Vault', href: '/vault', permission: 'vault.use' },
   { label: 'Users', href: '/users', permission: 'user.manage' },
+  { label: 'Activity', href: '/activity', permission: 'audit.view' },
 ];
 
 export default function TopBar() {

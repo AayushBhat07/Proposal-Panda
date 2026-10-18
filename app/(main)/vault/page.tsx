@@ -23,7 +23,7 @@ const field = 'min-h-11 w-full border border-rule-strong bg-paper px-3 text-ink'
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 
 export default function VaultPage() {
-  const { user } = useAuthStore();
+  const { user, can } = useAuthStore();
   const vault = useVaultStore();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,12 +61,12 @@ export default function VaultPage() {
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-8 px-4 pt-8 pb-16 sm:px-8 lg:px-14">
       <div className="flex flex-col gap-3">
-        <span className="font-mono text-xs tracking-widest text-muted">DOCUMENT VAULT · THIS COMPUTER ONLY</span>
+        <span className="font-mono text-xs tracking-widest text-muted">DOCUMENT VAULT · SHARED BY THE OFFICE</span>
         <h1 className="font-serif text-4xl leading-tight text-ink">Company documents</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-ink-soft">
-          GSTIN, PAN and certificates are encrypted with your vault passphrase and stored in this browser. They are
-          never uploaded or sent to the AI model. The vault locks after 15 minutes without activity and when you sign
-          out.
+          GSTIN, PAN and certificates are encrypted in your browser with the office vault passphrase before they are
+          stored on the office server, so the server never sees them and every office computer opens the same vault.
+          They are never sent to the AI model. The vault locks after 15 minutes without activity and when you sign out.
         </p>
       </div>
 
@@ -76,13 +76,25 @@ export default function VaultPage() {
         </p>
       )}
 
+      {vault.localVault === 'moved' && (
+        <p role="status" className="border-l-2 border-forest bg-forest-tint px-4 py-3 text-sm text-ink">
+          The vault this computer kept is now the office vault. Unlock it with the same passphrase as before.
+        </p>
+      )}
+      {vault.localVault === 'kept' && (
+        <p className="border-l-2 border-ochre bg-ochre-tint px-4 py-3 text-sm text-ink">
+          This browser also has an older vault of its own. It was left as it was because the office already has a vault;
+          upload any certificates it holds to the office vault.
+        </p>
+      )}
+
       {vault.status === 'checking' && <Spinner size="lg" className="text-forest" />}
       {vault.status === 'none' && <SetUp busy={busy} onSubmit={p => run(() => vault.setUp(p, user!.email))} />}
       {vault.status === 'locked' && (
         <Unlock
           busy={busy}
           onSubmit={p => run(() => vault.unlock(p, user!.email))}
-          onErase={() => run(vault.erase)}
+          onErase={can('user.manage') ? () => run(vault.erase) : undefined}
         />
       )}
       {vault.status === 'unlocked' && <Unlocked run={run} busy={busy} />}
@@ -142,7 +154,7 @@ function SetUp({ busy, onSubmit }: { busy: boolean; onSubmit: (passphrase: strin
   );
 }
 
-function Unlock({ busy, onSubmit, onErase }: { busy: boolean; onSubmit: (p: string) => void; onErase: () => void }) {
+function Unlock({ busy, onSubmit, onErase }: { busy: boolean; onSubmit: (p: string) => void; onErase?: () => void }) {
   const [passphrase, setPassphrase] = useState('');
   return (
     <div className="flex max-w-xl flex-col gap-6">
@@ -166,16 +178,20 @@ function Unlock({ busy, onSubmit, onErase }: { busy: boolean; onSubmit: (p: stri
           </Button>
         </div>
       </form>
-      <button
-        type="button"
-        className="self-start text-sm text-muted underline hover:text-seal"
-        onClick={() => {
-          const typed = window.prompt('Every document and number in the vault is deleted from this computer for good. Type ERASE to confirm.');
-          if (typed === 'ERASE') onErase();
-        }}
-      >
-        Forgot the passphrase? Erase the vault and start again
-      </button>
+      {onErase ? (
+        <button
+          type="button"
+          className="self-start text-sm text-muted underline hover:text-seal"
+          onClick={() => {
+            const typed = window.prompt('Every document and number in the office vault is deleted for everyone, for good. Type ERASE to confirm.');
+            if (typed === 'ERASE') onErase();
+          }}
+        >
+          Forgot the passphrase? Erase the vault and start again
+        </button>
+      ) : (
+        <p className="text-sm text-muted">Forgot the passphrase? Only an Admin can erase the vault and start again.</p>
+      )}
     </div>
   );
 }

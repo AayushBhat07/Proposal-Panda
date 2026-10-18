@@ -1,7 +1,15 @@
 # Handoff
-Next: SDE-1 builds `feat/db-foundation` per decisions/cto/local-database.md.
+Next: user reviews and merges the four PRs in order (foundation, users, tender data, vault). Then QA runs the
+two-browser test on the office machine with real Ollama.
 
-## Current Handoff (2026-10-18)
+## Current Handoff (2026-10-18, build)
+All four SDE branches are built and pass tests (143) plus a browser run across separate sessions: analyst
+uploads, writer drafts, viewer reads but gets 403 on writes, admin turns the viewer off (next call 401), old
+browser data imports with GSTIN/PAN scrubbed, the vault set up by the writer opens for the admin elsewhere and the
+database holds no plaintext GSTIN/PAN. Deviations from the plan are under "As built" in
+decisions/principal-architect/local-database.md. Not done: login rate limiting, CSRF tokens (security backlog).
+
+## Previous Handoff (2026-10-18, plan)
 PM → Architect → CTO for the local database. Read, in order: decisions/product-manager/local-database.md,
 decisions/principal-architect/local-database.md, adrs/004-sqlite-drizzle-local-db.md, decisions/cto/local-database.md.
 Acceptance criteria are the six PM success criteria. Priority: SDE-1, then SDE-2/3 (P0) in parallel with SDE-4 (P1).

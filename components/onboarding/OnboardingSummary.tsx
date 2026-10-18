@@ -86,7 +86,7 @@ export default function OnboardingSummary({ companyProfile: p, onEdit, onComplet
         <p>
           Signed in as <span className="font-medium">{user ? ROLE_LABELS[user.role] : 'unknown role'}</span>.{' '}
           {can('vault.use')
-            ? 'Next you will set up the document vault for GSTIN, PAN and certificates. They are encrypted on this computer and never sent to the AI model.'
+            ? 'Next you will set up the document vault for GSTIN, PAN and certificates. They are encrypted in your browser before they are stored, and never sent to the AI model.'
             : 'An Admin or Bid Writer adds GSTIN, PAN and certificates to the document vault.'}
         </p>
       </div>

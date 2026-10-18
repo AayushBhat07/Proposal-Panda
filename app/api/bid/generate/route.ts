@@ -13,6 +13,7 @@ import type { IntelligenceReport } from '@/features/intelligence-orchestrator/ty
 import { getDb } from '@/lib/db/client';
 import { getCompany } from '@/lib/db/repos/company';
 import { getTender, saveBid } from '@/lib/db/repos/tenders';
+import { record } from '@/lib/db/repos/audit';
 
 export async function POST(request: NextRequest) {
   const auth = await requirePermission(request, 'bid.generate');
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
     async onProgress => {
       const bid = await generateFoundationBid(report, companyProfile, onProgress);
       saveBid(db, tenderId, { ...bid, id: tenderId }, auth.email);
+      record(db, auth.email, 'drafted bid', tenderId);
       return { ...bid, id: tenderId };
     },
     error => {
