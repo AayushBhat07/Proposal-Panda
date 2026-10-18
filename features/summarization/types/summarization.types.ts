@@ -93,6 +93,8 @@ export interface TenderSummary {
     invitingOffice?: string;
     /** Delay, price variation, advance, security deposit and guarantee terms quoted from the tender text */
     keyTerms?: Array<{ label: string; text: string }>;
+    /** Two quotes that set the performance guarantee differently */
+    guaranteeConflict?: [string, string];
     /** Eligibility rules quoted from the tender: enlistment, similar works, turnover, solvency */
     eligibility?: Array<{ label: string; text: string }>;
     /** Risk-bearing clauses (guarantees, forfeiture, finality, disputes, extensions...) quoted from the tender text */

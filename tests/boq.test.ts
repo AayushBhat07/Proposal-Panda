@@ -103,6 +103,9 @@ height
 6.15 127674.00
 2.6 Providing and applying white cement based putty 665 sqm 156.05 103773.00
 3 Providing services of manpower
+3.1 IP-PBX system complete as required.
+1 Each 1537488.1
+2 1537488.12
 a) Khallasi 24
 Per
 Person
@@ -112,12 +115,13 @@ Month
 Total of Sub Head I 7,10,568.00
 Grand Total
 (I+II)
-942015.00`;
+2479503.12`;
   const [part] = findBoq(text);
   assert.deepEqual(part.items.map(i => [i.quantity, i.unit, i.amount]), [
     [20760, 'per letter per cm height', 127674],
     [665, 'sqm', 103773],
+    [1, 'Each', 1537488.12],
     [24, 'Per Person Per Month', 710568],
   ]);
-  assert.equal(part.statedTotal, 942015);
+  assert.equal(part.statedTotal, 2479503.12);
 });

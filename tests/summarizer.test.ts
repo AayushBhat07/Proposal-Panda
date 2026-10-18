@@ -7,6 +7,7 @@ import {
   findKeyTerms,
   findEmdAmount,
   findEligibility,
+  findGuaranteeConflict,
   groundSection,
   findEstimatedCost,
   findNitReference,
@@ -258,4 +259,20 @@ test('drops invented figures and clause numbers, and states 10CC as the tender d
     groundSection('- Similar works thresholds: Not specified in the tender.', '', undefined, [{ label: 'Similar works', text: 'Three similar works of 40%.' }]),
     '- Similar works: "Three similar works of 40%."'
   );
+});
+
+test('reads cost and EMD from a scanned press-notice table row', () => {
+  const scan = 'Sl. Tender Estimated Cost Earnest Money Eligibility of\nput to tender\nNo No Name of Work (Rs.) Deposit (Rs .) contractor\nN/2 025 · and Rs.6 ,65 , 42, 704 /· Rs.13, 30 ,854/·';
+  assert.equal(findEstimatedCost(scan), 'Rs. 6,65,42,704');
+  assert.equal(findEmdAmount(scan), 'Rs. 13,30,854');
+});
+
+test('flags a performance guarantee stated on two different bases', () => {
+  const text = [
+    'The contractor whose bid is accepted will be required to furnish performance guarantee of 5% of tendered value within the period specified in Schedule F.',
+    '',
+    'Performance Guarantee PG shall be 5% of the Estimated cost put to tender (ECPT) or contract amount whichever is higher.',
+  ].join('\n');
+  assert.equal(findGuaranteeConflict(text)?.length, 2);
+  assert.equal(findGuaranteeConflict('Performance guarantee of 5% of tendered value. The performance guarantee of 5% of the contract amount shall be valid.'), undefined);
 });

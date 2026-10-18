@@ -284,12 +284,19 @@ const EXPECTED_CLAUSES: Array<{ label: string; clause: string }> = [
 
 /** Clauses absent from the tender text itself. Skipped for reports analysed before the text was checked. */
 function identifyMissingClauses(summary: Summary): MissingClause[] {
-  if (!summary.metadata.riskClauses) return [];
+  const conflict = summary.metadata.guaranteeConflict;
+  const conflicting: MissingClause[] = conflict
+    ? [{ clause: 'Performance guarantee (stated two ways)', reason: `The tender says "${conflict[0]}" and also "${conflict[1]}". Ask which applies in a pre-bid query.` }]
+    : [];
+  if (!summary.metadata.riskClauses) return conflicting;
   const clauses = clausesOf(summary);
-  return EXPECTED_CLAUSES.filter(({ label }) => !clauses[label]).map(({ clause }) => ({
-    clause,
-    reason: 'Not found in the tender text. Check whether the General Conditions of Contract it refers to (e.g. CPWD GCC) cover it.',
-  }));
+  return [
+    ...conflicting,
+    ...EXPECTED_CLAUSES.filter(({ label }) => !clauses[label]).map(({ clause }) => ({
+      clause,
+      reason: 'Not found in the tender text. Check whether the General Conditions of Contract it refers to (e.g. CPWD GCC) cover it.',
+    })),
+  ];
 }
 
 /** Procedural requirements quoted from the tender. */

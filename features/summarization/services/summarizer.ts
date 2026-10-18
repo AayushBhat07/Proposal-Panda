@@ -109,7 +109,7 @@ export function findCompletionMonths(text: string): number | undefined {
 }
 
 const AMOUNT =
-  /(?:Rs\.?|₹|INR|रु\.?|\(in INR\))\s*[:\-]?\s*(\d+(?:,\s?\d+)*(?:\.\d+)?)\s*(?:\/-)?\s*(lakhs?|lacs?|crores?|cr\b)?/i;
+  /(?:Rs\.?|₹|INR|रु\.?|\(in INR\))\s*[:\-]?\s*(\d+(?:\s?,\s?\d+)*(?:\.\d+)?)\s*(?:\/-)?\s*(lakhs?|lacs?|crores?|cr\b)?/i;
 
 /** "Rs. 38, 32,203/-" -> { printed: "Rs. 38,32,203", rupees: 3832203 } */
 function parseAmount(s: string): { printed: string; rupees: number } | undefined {
@@ -147,15 +147,33 @@ function findAmount(text: string, label: RegExp, minRupees: number): string | un
   );
 }
 
+/**
+ * A press-notice table: a header row naming "Estimated Cost" then "Earnest Money", and a work's row below it carrying
+ * the two amounts in that order ("Rs.6 ,65 , 42, 704 /· Rs.13, 30 ,854/·" in a scan).
+ */
+function tableRowAmounts(text: string): { cost: string; emd: string } | undefined {
+  const lines = text.split('\n');
+  const header = lines.findIndex(l => /estimated\s+cost.*earnest\s+money/i.test(l));
+  if (header === -1) return undefined;
+  for (const line of lines.slice(header + 1, header + 15)) {
+    const amounts = [...line.matchAll(new RegExp(AMOUNT.source, 'gi'))].map(m => parseAmount(m[0]));
+    if (amounts.length >= 2 && amounts[0] && amounts[1] && amounts[0].rupees > amounts[1].rupees) {
+      return { cost: amounts[0].printed, emd: amounts[1].printed };
+    }
+  }
+  return undefined;
+}
+
 /** GeM bids with item-wise evaluation print one EMD per schedule; no single figure applies then. */
 export const SCHEDULE_WISE_EMD = 'as per the schedule-wise EMD in the bid document';
 
 export function findEmdAmount(text: string): string | undefined {
   if ((text.match(/Schedule\s*\d+\s*EMD Amount/gi) ?? []).length > 1) return SCHEDULE_WISE_EMD;
-  return findAmount(text, /\b(?:earnest money(?: deposit)?|E\.?M\.?D\.?(?: amount)?|bid security(?: deposit)?)\b/i, 500);
+  return findAmount(text, /\b(?:earnest money(?: deposit)?|E\.?M\.?D\.?(?: amount)?|bid security(?: deposit)?)\b/i, 500) ?? tableRowAmounts(text)?.emd;
 }
 export const findEstimatedCost = (text: string) =>
-  findAmount(text, /\b(?:estimated (?:cost|value)(?: (?:put to tender|of (?:the )?work))?|tender value|e\.?\s?c\.?\s?p\.?\s?t\.?)\b/i, 10000);
+  findAmount(text, /\b(?:estimated (?:cost|value)(?: (?:put to tender|of (?:the )?work))?|tender value|e\.?\s?c\.?\s?p\.?\s?t\.?)\b/i, 10000) ??
+  tableRowAmounts(text)?.cost;
 
 /** Finds the delay compensation rate and cap, e.g. "1.5% per month, maximum 10%". */
 export function findDelayCompensation(text: string): string | undefined {
@@ -304,6 +322,26 @@ export function findKeyTerms(text: string): Array<{ label: string; text: string 
   const priceVariation = findPriceVariation(flat);
   if (priceVariation) terms.splice(1, 0, { label: 'Price variation (Clause 10CC)', text: priceVariation });
   return terms;
+}
+
+/**
+ * Two places in one tender that set the performance guarantee on different bases ("5% of tendered value" in the NIT,
+ * "5% of ECPT or contract amount, whichever is higher" in Schedule F). Returns both quotes, for a pre-bid query.
+ * "Contract amount" is the tendered value; the additional guarantee for low bids is a separate rule and is skipped.
+ */
+export function findGuaranteeConflict(text: string): [string, string] | undefined {
+  const flat = joinWrapped(text).replace(/\n/g, ' ');
+  const seen = new Map<string, string>();
+  const PG = /performance (?:guarantee|security)\b(?:(?!additional)[^.]){0,120}?(\d+(?:\.\d+)?)\s*%\s*(?:\([^)]*\)\s*)?of\s+(?:the\s+)?([^.]{0,90})/gi;
+  for (const m of flat.matchAll(PG)) {
+    const base = m[2].toLowerCase();
+    const bases = [/tender(?:ed)?\s+(?:value|amount)|contract\s+(?:amount|value)/.test(base) && 'tendered', /ecpt|estimated cost/.test(base) && 'ecpt'];
+    const key = `${m[1]}%:${bases.filter(Boolean).join('+')}`;
+    if (seen.has(key)) continue;
+    seen.set(key, tidyQuote(flat.slice(sentenceStart(flat, m.index!), sentenceEnd(flat, m.index!))).slice(0, 300));
+    if (seen.size === 2) return [...seen.values()] as [string, string];
+  }
+  return undefined;
 }
 
 const ANY = /./;
@@ -679,6 +717,7 @@ export class TenderSummarizationService {
           invitingOffice: findInvitingOffice(input.fullText),
           keyTerms,
           eligibility: facts.eligibility,
+          guaranteeConflict: findGuaranteeConflict(input.fullText),
           riskClauses: findRiskClauses(input.fullText),
           tenderKind: findTenderKind(input.fullText),
           standards: findStandards(input.fullText),

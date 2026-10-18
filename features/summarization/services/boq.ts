@@ -79,6 +79,13 @@ function parsePart(lines: string[], title: string): BoqPart {
     let line = clean[i];
     // Figures split over short lines ("754" / "Quintal" / "906.39 6,83,418", or "a) Khallasi 24" / "Per" / "Person" /
     // "Per" / "Month" / "29607.00 7,10,568.00"): join them back into one row.
+    // The rate's last digits wrapped under it ("1 Each 1537488.1" / "2 1537488.12"): rejoin when qty × rate = amount.
+    const cut = new RegExp(String.raw`^(.*?)(${NUMBER})\s+(${UNIT})\s+(\d[\d,]*\.\d+)$`).exec(line);
+    const tail = cut && new RegExp(String.raw`^(\d{1,2})\s+(${NUMBER})$`).exec(clean[i + 1] ?? '');
+    if (cut && tail && Math.abs(toNumber(cut[2]) * toNumber(cut[4] + tail[1]) - toNumber(tail[2])) <= 1) {
+      line = `${cut[1]}${cut[2]} ${cut[3]} ${cut[4]}${tail[1]} ${tail[2]}`;
+      i += 1;
+    }
     const endsInQty = new RegExp(String.raw`\s(?:${NUMBER})$`).test(line);
     if (!ROW.test(line) && (line.length <= 24 || endsInQty)) {
       for (let take = 1; take <= 5 && i + take < clean.length; take++) {
