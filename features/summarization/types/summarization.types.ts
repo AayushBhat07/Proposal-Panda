@@ -3,6 +3,8 @@
  * Defines structured output for tender summarization
  */
 
+import type { OnProgress } from '@/lib/progress/events';
+
 /**
  * Structured summarization output
  * All sections are factual compressions, no judgment or scoring
@@ -186,6 +188,8 @@ export interface SummarizationOptions {
    * Enable verbose logging
    */
   verbose?: boolean;
+  /** Progress callback: started / done for text extraction, the model check and each summary call. */
+  onProgress?: OnProgress;
 }
 
 /**

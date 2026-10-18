@@ -11,7 +11,7 @@ import { tmpdir } from 'os';
 import { requirePermission } from '@/lib/auth/server';
 import { executeIntelligencePipeline } from '@/features/intelligence-orchestrator';
 import { UnreadableDocumentError } from '@/features/summarization/services/textExtractor';
-import type { IntelligenceReport } from '@/features/intelligence-orchestrator';
+import { streamProgress } from '@/lib/progress/stream';
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -72,47 +72,41 @@ export async function POST(request: NextRequest) {
     console.log(`[API] Processing tender: ${tenderTitle} (${tenderId})`);
     console.log(`[API] File saved to: ${tempFilePath}`);
 
-    // Execute real intelligence pipeline
-    const result = await executeIntelligencePipeline({
-      tenderFilePath: tempFilePath,
-      tenderId,
-      tenderTitle,
-      verbose: true,
-    });
-
-    // Clean up temporary file
-    if (tempFilePath) {
-      await unlink(tempFilePath).catch(err => 
-        console.warn(`[API] Failed to delete temp file: ${err.message}`)
-      );
-      tempFilePath = null;
-    }
-
-    // Extract the intelligence report
-    const report: IntelligenceReport = result.report;
-
-    console.log(`[API] Pipeline completed successfully`);
-    console.log(`[API] Total execution time: ${result.diagnostics.totalTimeMs}ms`);
-
-    // Return the full intelligence report
-    return NextResponse.json(report, { status: 200 });
+    // Stream progress, then the report. The temp file goes once the job settles either way.
+    const filePath = tempFilePath;
+    tempFilePath = null;
+    return streamProgress(
+      async onProgress => {
+        try {
+          const result = await executeIntelligencePipeline({
+            tenderFilePath: filePath,
+            tenderId,
+            tenderTitle,
+            verbose: true,
+            onProgress,
+          });
+          console.log(`[API] Pipeline completed in ${result.diagnostics.totalTimeMs}ms`);
+          return result.report;
+        } finally {
+          await unlink(filePath).catch(err => console.warn(`[API] Failed to delete temp file: ${err.message}`));
+        }
+      },
+      pipelineError
+    );
 
   } catch (error) {
     // Clean up temp file on error
     if (tempFilePath) {
       await unlink(tempFilePath).catch(() => {});
     }
-
-    if (error instanceof UnreadableDocumentError) {
-      return NextResponse.json({ error: error.message }, { status: 422 });
-    }
-
-    // Internal details stay in the server log, not the response.
-    console.error('[API] Intelligence pipeline error:', error);
-
-    return NextResponse.json(
-      { error: 'Failed to process tender document. Please try again.' },
-      { status: 500 }
-    );
+    const { error: message, status } = pipelineError(error);
+    return NextResponse.json({ error: message }, { status });
   }
+}
+
+function pipelineError(error: unknown): { error: string; status: number } {
+  if (error instanceof UnreadableDocumentError) return { error: error.message, status: 422 };
+  // Internal details stay in the server log, not the response.
+  console.error('[API] Intelligence pipeline error:', error);
+  return { error: 'Failed to process tender document. Please try again.', status: 500 };
 }

@@ -4,15 +4,16 @@
  * The tender register (every analysed tender, newest first) and the upload that adds to it.
  */
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/state/authStore';
 import TenderUpload from '@/components/dashboard/TenderUpload';
-import ProcessingState from '@/components/dashboard/ProcessingState';
+import SiteOffice from '@/components/site-office/SiteOffice';
+import { ANALYSIS_JOB, useJobsStore } from '@/state/jobsStore';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
-import { saveToLocalStorage, getFromLocalStorage } from '@/services/storage/mockStorageService';
+import { getFromLocalStorage } from '@/services/storage/mockStorageService';
 import { RISK_TEXT } from '@/components/analysis/risk';
 import type { RiskLevel } from '@/features/compliance-scoring/types/compliance.types';
 import { countdown, daysUntil, formatKeyDate, type KeyDate } from '@/features/summarization/services/dates';
@@ -31,9 +32,6 @@ function registerOrder(a: StoredReport, b: StoredReport): number {
   if (openA) return bidDue(a)!.date.localeCompare(bidDue(b)!.date) || (bidDue(a)!.time ?? '').localeCompare(bidDue(b)!.time ?? '');
   return b.uploadedAt.localeCompare(a.uploadedAt);
 }
-
-type UploadState = 'idle' | 'processing' | 'success' | 'error';
-type ProcessingStage = 'analyzing' | 'scoring' | 'finalizing';
 
 interface StoredReport {
   id: string;
@@ -57,74 +55,31 @@ function RegisterContent() {
   const deniedPath = searchParams.get('denied');
   const { can } = useAuthStore();
   const [reports, setReports] = useState<StoredReport[]>([]);
-  const [uploadState, setUploadState] = useState<UploadState>('idle');
-  const [processingStage, setProcessingStage] = useState<ProcessingStage>('analyzing');
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // The run lives in the jobs store so it keeps going if the user opens another page.
+  const job = useJobsStore(state => state.jobs[ANALYSIS_JOB]);
+  const startAnalysis = useJobsStore(state => state.startAnalysis);
+  const clearJob = useJobsStore(state => state.clearJob);
 
   useEffect(() => {
     const stored = getFromLocalStorage<StoredReport[]>('intelligenceReports');
     const list = Array.isArray(stored) ? stored : [];
+    // Browser storage is only readable after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReports(list.sort(registerOrder));
     setIsLoadingData(false);
   }, []);
 
-  const handleFileUpload = async (file: File) => {
-    try {
-      setUploadedFile(file);
-      setUploadState('processing');
-      setProcessingStage('analyzing');
-      setErrorMessage(null);
+  // Watched it finish here: open the report, as before. Finished while away: the toast already offered it.
+  const watchedRun = useRef(false);
+  useEffect(() => {
+    if (job?.status === 'running') watchedRun.current = true;
+    if (job?.status !== 'done') return;
+    clearJob(ANALYSIS_JOB);
+    if (watchedRun.current) router.push(job.href);
+  }, [job, clearJob, router]);
 
-      const tenderId = `TENDER-${Date.now()}`;
-      const tenderTitle = file.name.replace(/\.(pdf|docx)$/i, '');
-
-      // Run the analysis pipeline (text extraction → local-model summary → compliance scoring)
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('tenderId', tenderId);
-      formData.append('tenderTitle', tenderTitle);
-
-      // The stage indicator can't see inside the pipeline, so advance it on a timer.
-      const scoringTimer = setTimeout(() => setProcessingStage('scoring'), 4000);
-      const response = await fetch('/api/intelligence/run', { method: 'POST', body: formData });
-      clearTimeout(scoringTimer);
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to process tender document.');
-      }
-      setProcessingStage('finalizing');
-
-      const saved = saveToLocalStorage('intelligenceReports', {
-        id: tenderId,
-        fileName: file.name,
-        uploadedAt: new Date().toISOString(),
-        ...data,
-      });
-      if (!saved) {
-        throw new Error(
-          'The analysis finished but could not be saved in this browser. Browser storage may be full or blocked; free some space and try again.'
-        );
-      }
-      localStorage.setItem('tender-app-latestTenderId', tenderId);
-
-      setUploadState('success');
-      router.push(`/tenders/${tenderId}/analysis`);
-    } catch (error) {
-      console.error('Processing error:', error);
-      setUploadState('error');
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to process tender document. Please try again.'
-      );
-    }
-  };
-
-  const handleRetryUpload = () => {
-    setUploadState('idle');
-    setUploadedFile(null);
-    setErrorMessage(null);
-  };
+  const handleRetryUpload = () => clearJob(ANALYSIS_JOB);
 
   const countAt = (level: RiskLevel) => reports.filter(r => r.compliance?.riskLevel === level).length;
   const highRisk = countAt('High');
@@ -168,19 +123,25 @@ function RegisterContent() {
         {!can('tender.upload') && (
           <p className="text-sm text-ink-soft">Your role can read analysed tenders but not upload new ones.</p>
         )}
-        {can('tender.upload') && uploadState === 'idle' && <TenderUpload onUpload={handleFileUpload} />}
-        {uploadState === 'processing' && uploadedFile && (
-          <ProcessingState fileName={uploadedFile.name} stage={processingStage} />
+        {can('tender.upload') && !job && <TenderUpload onUpload={startAnalysis} />}
+        {job && (job.status === 'running' || (job.status === 'error' && job.events.length > 0)) && (
+          <SiteOffice
+            pipeline="analysis"
+            events={job.events}
+            title={`Reading ${job.title}`}
+            error={job.status === 'error' ? job.error : null}
+          />
         )}
-        {uploadState === 'success' && (
+        {job?.status === 'done' && (
           <p className="border border-rule-strong bg-sheet p-8 text-center text-ink">
             Analysis complete. Opening the report…
           </p>
         )}
-        {uploadState === 'error' && (
+        {job?.status === 'error' && (
           <div className="border border-seal/40 bg-seal-tint p-8 flex flex-col items-center gap-3 text-center">
             <p className="font-serif text-xl text-seal">The tender couldn&apos;t be analysed</p>
-            <p className="text-sm text-ink-soft">{errorMessage || 'Please try again.'}</p>
+            {/* With events the site office above already shows the message. */}
+            {job.events.length === 0 && <p className="text-sm text-ink-soft">{job.error || 'Please try again.'}</p>}
             <Button onClick={handleRetryUpload}>Try again</Button>
           </div>
         )}

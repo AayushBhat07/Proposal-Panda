@@ -24,6 +24,8 @@ import { UnreadableDocumentError } from '../../summarization/services/textExtrac
 // Import Phase 4B
 import { analyzeCompliance } from '../../compliance-scoring/services/complianceScorer';
 import type { ComplianceScoringInput } from '../../compliance-scoring/types/compliance.types';
+import { trackStep } from '@/lib/progress/stream';
+import { STEP_LABELS } from '@/lib/progress/events';
 
 /**
  * Execute full intelligence pipeline: Phase 4A → Phase 4B
@@ -65,6 +67,7 @@ export async function executeIntelligencePipeline(
       input.tenderTitle,
       {
         verbose: input.verbose,
+        onProgress: input.onProgress,
       }
     );
 
@@ -102,7 +105,13 @@ export async function executeIntelligencePipeline(
       },
     };
 
-    const complianceResult = await analyzeCompliance(complianceInput);
+    const complianceResult = await trackStep(
+      input.onProgress,
+      'compliance',
+      STEP_LABELS.compliance,
+      () => analyzeCompliance(complianceInput),
+      r => `Risk level: ${r.score.riskLevel}, score ${r.score.complianceScore}/100`
+    );
 
     const phase4BEndTime = Date.now();
     const phase4BTimeMs = phase4BEndTime - phase4BStartTime;

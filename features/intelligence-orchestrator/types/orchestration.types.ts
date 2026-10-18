@@ -7,6 +7,7 @@
  * NO AI LOGIC IS ADDED HERE.
  */
 
+import type { OnProgress } from '@/lib/progress/events';
 import type { TenderSummary } from '../../summarization/types/summarization.types';
 import type { ComplianceScore } from '../../compliance-scoring/types/compliance.types';
 
@@ -66,6 +67,8 @@ export interface IntelligenceOrchestrationInput {
    * Optional: verbose logging
    */
   verbose?: boolean;
+  /** Optional: progress callback for each pipeline step (see lib/progress/events.ts) */
+  onProgress?: OnProgress;
 }
 
 /**
