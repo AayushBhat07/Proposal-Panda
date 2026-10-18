@@ -12,6 +12,8 @@ import { requirePermission } from '@/lib/auth/server';
 import { executeIntelligencePipeline } from '@/features/intelligence-orchestrator';
 import { UnreadableDocumentError } from '@/features/summarization/services/textExtractor';
 import { streamProgress } from '@/lib/progress/stream';
+import { getDb } from '@/lib/db/client';
+import { addTender, isTenderId, tenderExists } from '@/lib/db/repos/tenders';
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
@@ -44,6 +46,13 @@ export async function POST(request: NextRequest) {
         { error: 'Missing tender metadata (tenderId or tenderTitle).' },
         { status: 400 }
       );
+    }
+
+    if (!isTenderId(tenderId)) {
+      return NextResponse.json({ error: 'Invalid tender id.' }, { status: 400 });
+    }
+    if (tenderExists(getDb(), tenderId)) {
+      return NextResponse.json({ error: 'A tender with this id is already on the register.' }, { status: 409 });
     }
 
     // Validate file type
@@ -86,7 +95,10 @@ export async function POST(request: NextRequest) {
             onProgress,
           });
           console.log(`[API] Pipeline completed in ${result.diagnostics.totalTimeMs}ms`);
-          return result.report;
+          // On the office register before the browser hears it finished, so a closed tab loses nothing.
+          const stored = { id: tenderId, fileName: file.name, uploadedAt: new Date().toISOString(), ...result.report };
+          if (!addTender(getDb(), stored, auth.email)) throw new Error(`Tender ${tenderId} was added twice`);
+          return stored;
         } finally {
           await unlink(filePath).catch(err => console.warn(`[API] Failed to delete temp file: ${err.message}`));
         }

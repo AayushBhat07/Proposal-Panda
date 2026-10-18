@@ -6,8 +6,6 @@
  * only at download time, from the unlocked vault.
  */
 
-import { getAllFromLocalStorage, saveToLocalStorage } from '@/services/storage/mockStorageService';
-import type { FoundationBid } from '@/features/bid-generation/types/bid.types';
 import { DOCUMENT_KINDS, type DocumentKind, type Identifiers, type VaultDocument } from './vault';
 
 export const GSTIN_TOKEN = '{GSTIN}';
@@ -72,11 +70,3 @@ export function scrubIdentifiers(text: string, legacy: { gstin?: string; panNumb
   return out;
 }
 
-/** Rewrites every stored bid that still carries the real numbers. Safe to run on each page load. */
-export function scrubStoredBids(legacy: { gstin?: string; panNumber?: string }) {
-  if (!legacy.gstin && !legacy.panNumber) return;
-  for (const bid of getAllFromLocalStorage<FoundationBid & { id: string }>('foundationBids')) {
-    const sections = bid.sections.map(s => ({ ...s, content: scrubIdentifiers(s.content, legacy) }));
-    if (sections.some((s, i) => s.content !== bid.sections[i].content)) saveToLocalStorage('foundationBids', { ...bid, sections });
-  }
-}

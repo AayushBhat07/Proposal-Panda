@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
-import AppInitializer from './AppInitializer';
 import { OnboardingProvider } from '@/lib/context/OnboardingContext';
 
 const sourceSerif = Source_Serif_4({
@@ -37,7 +36,6 @@ export default function RootLayout({
         className={`${sourceSerif.variable} ${plexSans.variable} ${plexMono.variable} antialiased`}
       >
         <OnboardingProvider>
-          <AppInitializer />
           {children}
         </OnboardingProvider>
       </body>

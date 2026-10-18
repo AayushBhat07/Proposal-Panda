@@ -13,7 +13,7 @@ import SiteOffice from '@/components/site-office/SiteOffice';
 import { ANALYSIS_JOB, useJobsStore } from '@/state/jobsStore';
 import Button from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
-import { getFromLocalStorage } from '@/services/storage/mockStorageService';
+import { fetchRegister } from '@/lib/data/api';
 import { RISK_TEXT } from '@/components/analysis/risk';
 import type { RiskLevel } from '@/features/compliance-scoring/types/compliance.types';
 import { countdown, daysUntil, formatKeyDate, type KeyDate } from '@/features/summarization/services/dates';
@@ -61,13 +61,19 @@ function RegisterContent() {
   const startAnalysis = useJobsStore(state => state.startAnalysis);
   const clearJob = useJobsStore(state => state.clearJob);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   useEffect(() => {
-    const stored = getFromLocalStorage<StoredReport[]>('intelligenceReports');
-    const list = Array.isArray(stored) ? stored : [];
-    // Browser storage is only readable after hydration.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReports(list.sort(registerOrder));
-    setIsLoadingData(false);
+    fetchRegister<StoredReport, unknown>().then(
+      ({ reports }) => {
+        setReports(reports.sort(registerOrder));
+        setIsLoadingData(false);
+      },
+      (err: Error) => {
+        setLoadError(err.message);
+        setIsLoadingData(false);
+      }
+    );
   }, []);
 
   // Watched it finish here: open the report, as before. Finished while away: the toast already offered it.
@@ -100,6 +106,12 @@ function RegisterContent() {
                 }${dueThisWeek ? ` ${dueThisWeek} ${dueThisWeek === 1 ? 'bid is' : 'bids are'} due within a week.` : ''}`}
         </h1>
       </div>
+
+      {loadError && (
+        <p role="alert" className="border-l-2 border-seal bg-seal-tint px-4 py-3 text-sm text-seal">
+          {loadError}
+        </p>
+      )}
 
       {deniedPath && (
         <p role="alert" className="border-l-2 border-seal bg-seal-tint px-4 py-3 text-sm text-seal">

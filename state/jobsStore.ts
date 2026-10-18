@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Analysis and bid runs live here, not in their pages, so they keep going (and get saved)
- * when the user moves to another page. A toast says when one finishes.
+ * Analysis and bid runs live here, not in their pages, so they keep going when the user moves to another
+ * page. The server saves each result to the office database; a toast says when one finishes.
  * A full reload or closed tab still ends the run in this browser; see RunTracker's unload warning.
  */
 
@@ -10,7 +10,6 @@ import { create } from 'zustand';
 import type { FoundationBid } from '@/features/bid-generation';
 import type { Pipeline, ProgressEvent } from '@/lib/progress/events';
 import { readProgressStream } from '@/lib/progress/stream';
-import { saveToLocalStorage } from '@/services/storage/mockStorageService';
 
 export interface Job {
   pipeline: Pipeline;
@@ -41,7 +40,7 @@ interface JobsStore {
   jobs: Record<string, Job>;
   toasts: Toast[];
   startAnalysis: (file: File) => void;
-  startBid: (tenderId: string, title: string, body: unknown) => void;
+  startBid: (tenderId: string, title: string) => void;
   clearJob: (key: string) => void;
   dismissToast: (id: number) => void;
 }
@@ -54,14 +53,13 @@ export const useJobsStore = create<JobsStore>((set, get) => {
 
   const toast = (t: Omit<Toast, 'id'>) => set(state => ({ toasts: [...state.toasts, { ...t, id: ++toastId }] }));
 
-  async function run<T>(key: string, job: Omit<Job, 'status' | 'events' | 'error'>, request: () => Promise<Response>, save: (data: T) => void) {
+  async function run<T>(key: string, job: Omit<Job, 'status' | 'events' | 'error'>, request: () => Promise<Response>) {
     set(state => ({ jobs: { ...state.jobs, [key]: { ...job, status: 'running', events: [], error: null } } }));
     const what = job.pipeline === 'analysis' ? `Analysis of ${job.title}` : `Bid for ${job.title}`;
     try {
-      const data = await readProgressStream<T>(await request(), event =>
+      await readProgressStream<T>(await request(), event =>
         patch(key, { events: [...(get().jobs[key]?.events ?? []), event] })
       );
-      save(data);
       patch(key, { status: 'done' });
       toast({ text: `${what} is ready.`, href: job.href, linkText: job.pipeline === 'analysis' ? 'Open report' : 'Open bid', tone: 'done' });
     } catch (err) {
@@ -84,25 +82,11 @@ export const useJobsStore = create<JobsStore>((set, get) => {
       void run<Record<string, unknown>>(
         ANALYSIS_JOB,
         { pipeline: 'analysis', title: file.name, href: `/tenders/${tenderId}/analysis`, livePath: '/register' },
-        () => fetch('/api/intelligence/run', { method: 'POST', body: formData }),
-        data => {
-          const saved = saveToLocalStorage('intelligenceReports', {
-            id: tenderId,
-            fileName: file.name,
-            uploadedAt: new Date().toISOString(),
-            ...data,
-          });
-          if (!saved) {
-            throw new Error(
-              'The analysis finished but could not be saved in this browser. Browser storage may be full or blocked; free some space and try again.'
-            );
-          }
-          localStorage.setItem('tender-app-latestTenderId', tenderId);
-        }
+        () => fetch('/api/intelligence/run', { method: 'POST', body: formData })
       );
     },
 
-    startBid: (tenderId, title, body) =>
+    startBid: (tenderId, title) =>
       void run<FoundationBid>(
         bidJobKey(tenderId),
         { pipeline: 'bid', title, href: `/tenders/${tenderId}/bid`, livePath: `/tenders/${tenderId}/bid` },
@@ -110,13 +94,8 @@ export const useJobsStore = create<JobsStore>((set, get) => {
           fetch('/api/bid/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          }),
-        data => {
-          if (!saveToLocalStorage('foundationBids', { ...data, id: tenderId })) {
-            throw new Error('The bid was drafted but could not be saved in this browser. Free some browser storage and try again.');
-          }
-        }
+            body: JSON.stringify({ tenderId }),
+          })
       ),
 
     clearJob: key =>
