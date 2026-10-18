@@ -18,6 +18,7 @@ const NAV_ITEMS: Array<{ label: string; href: string; permission?: Permission }>
   { label: 'Register', href: '/register' },
   { label: 'Company', href: '/company' },
   { label: 'Vault', href: '/vault', permission: 'vault.use' },
+  { label: 'Users', href: '/users', permission: 'user.manage' },
 ];
 
 export default function TopBar() {

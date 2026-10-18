@@ -4,7 +4,7 @@ import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import Button from '@/components/ui/Button';
-import { DEMO_EMAILS } from '@/lib/auth/users';
+import { DEMO_EMAILS } from '@/lib/auth/demo';
 
 export default function LoginPage() {
   return (
