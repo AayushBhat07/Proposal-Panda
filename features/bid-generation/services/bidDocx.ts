@@ -2,16 +2,34 @@
  * Word export of one bid cover. Cover I and Cover II are separate files because they are uploaded
  * separately and prices must never appear in Cover I.
  * Section content is the light markdown the generator writes: **bold**, *italic*, "- " bullets and
- * numbered lines. Blanks stay highlighted so the contractor can find what is left to fill.
+ * numbered lines. Blanks stay highlighted so the contractor can find what is left to fill; notes meant only
+ * for the contractor are left out. The vault documents the checklist names follow it, one page per image.
  */
 
-import { AlignmentType, Document, Footer, HeadingLevel, Packer, PageNumber, Paragraph, TextRun } from 'docx';
+import { AlignmentType, Document, Footer, HeadingLevel, ImageRun, Packer, PageNumber, Paragraph, TextRun } from 'docx';
 import type { BidCover, FoundationBid } from '../types/bid.types';
-import { splitBlanks, unwrapLines } from './draftText';
+import { forSubmission, splitBlanks, unwrapLines } from './draftText';
+
+export interface EnclosurePage {
+  data: Uint8Array;
+  type: 'png' | 'jpg';
+  width: number;
+  height: number;
+}
+
+/** A checklist item and the pages of the documents that satisfy it. */
+export interface Enclosure {
+  item: string;
+  pages: EnclosurePage[];
+}
+
+// The text area of the default A4 page with 1" margins, in pixels at 96 dpi, less room for the heading.
+const MAX_IMAGE = { width: 600, height: 860 };
 
 export const COVER_TITLES: Record<BidCover, string> = {
   technical: 'Cover I: Technical Bid',
   financial: 'Cover II: Financial Bid',
+  queries: 'Pre-bid Queries',
 };
 
 const INLINE = /(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/;
@@ -31,7 +49,7 @@ function runs(line: string): TextRun[] {
 }
 
 function paragraphs(content: string): Paragraph[] {
-  return unwrapLines(content).split('\n').map(raw => {
+  return unwrapLines(forSubmission(content)).split('\n').map(raw => {
     const line = raw.trimEnd();
     const bullet = /^\s*[-•]\s+/.exec(line);
     if (bullet) return new Paragraph({ children: runs(line.slice(bullet[0].length)), bullet: { level: 0 } });
@@ -40,7 +58,29 @@ function paragraphs(content: string): Paragraph[] {
   });
 }
 
-export function buildCoverDocument(bid: FoundationBid, cover: BidCover, nitRef: string, companyName: string): Document {
+function enclosure({ item, pages }: Enclosure): Paragraph[] {
+  return pages.map((page, i) => {
+    const scale = Math.min(MAX_IMAGE.width / page.width, MAX_IMAGE.height / page.height, 1);
+    const image = new ImageRun({
+      type: page.type,
+      data: page.data,
+      transformation: { width: Math.round(page.width * scale), height: Math.round(page.height * scale) },
+    });
+    return new Paragraph({
+      pageBreakBefore: true,
+      alignment: AlignmentType.CENTER,
+      children: i === 0 ? [new TextRun({ text: forSubmission(item), bold: true }), new TextRun({ break: 1 }), image] : [image],
+    });
+  });
+}
+
+export function buildCoverDocument(
+  bid: FoundationBid,
+  cover: BidCover,
+  nitRef: string,
+  companyName: string,
+  enclosures: Enclosure[] = []
+): Document {
   const sections = bid.sections.filter(section => section.cover === cover);
   return new Document({
     creator: companyName,
@@ -72,6 +112,7 @@ export function buildCoverDocument(bid: FoundationBid, cover: BidCover, nitRef: 
           ...sections.flatMap((section, index) => [
             new Paragraph({ heading: HeadingLevel.HEADING_1, pageBreakBefore: index > 0, children: [new TextRun(section.title)] }),
             ...paragraphs(section.content),
+            ...(section.id === 'document-checklist' ? enclosures.flatMap(enclosure) : []),
           ]),
         ],
       },

@@ -36,6 +36,7 @@ import {
   withIdentifiers,
 } from '@/lib/vault/bidVault';
 import { buildBundle } from '@/lib/vault/bundle';
+import { pageImages } from '@/lib/vault/pageImages';
 import SiteOffice from '@/components/site-office/SiteOffice';
 import { bidJobKey, useJobsStore } from '@/state/jobsStore';
 import { DOCUMENT_KINDS } from '@/lib/vault/vault';
@@ -50,9 +51,22 @@ const COVERS: Array<{ cover: BidCover; label: string; title: string; file: strin
     file: 'cover-2-financial',
     note: 'Opened only for bidders who pass Cover I. Prices are never generated: fill the proforma yourself.',
   },
+  {
+    cover: 'queries',
+    label: 'BEFORE THE BID',
+    title: 'Pre-bid queries',
+    file: 'pre-bid-queries',
+    note: 'Sent to the department before the pre-bid meeting. Not part of either cover.',
+  },
 ];
 
 type StoredBid = FoundationBid & { id: string };
+
+// Bids drafted before pre-bid queries had their own place carry them in Cover I.
+const withQueriesApart = (bid: StoredBid | null | undefined): StoredBid | null =>
+  bid
+    ? { ...bid, sections: bid.sections.map(s => (s.id === 'pre-bid-queries' ? { ...s, cover: 'queries' as const } : s)) }
+    : null;
 
 const reportTitle = (report: Record<string, unknown>) => {
   const metadata = (report.summary as { metadata?: { nameOfWork?: string; tenderTitle?: string } } | undefined)?.metadata;
@@ -92,7 +106,7 @@ export default function FoundationBidPage() {
     Promise.all([tender, fetchAnswers().catch(() => ({}))]).then(
       ([tender, answers]) => {
         setReport(tender?.report ?? null);
-        setBid(tender?.bid ?? null);
+        setBid(withQueriesApart(tender?.bid));
         setSavedAnswers(answers);
         setIsLoaded(true);
       }
@@ -118,7 +132,7 @@ export default function FoundationBidPage() {
     return useJobsStore.subscribe(state => {
       if (state.jobs[key]?.status !== 'done') return;
       clearJob(key);
-      fetchTender<Record<string, unknown>, StoredBid>(id).then(tender => setBid(tender.bid), () => {});
+      fetchTender<Record<string, unknown>, StoredBid>(id).then(tender => setBid(withQueriesApart(tender.bid)), () => {});
     });
   }, [id, clearJob]);
 
@@ -151,8 +165,27 @@ export default function FoundationBidPage() {
         .join(ids?.pan || '[PAN]');
     const forExport = { ...bid, sections: bid.sections.map(s => ({ ...s, content: filled(s.content) })) };
     if (needsIds && vaultOpen) await vault.session!.log('exported bid', `${bid.tenderTitle}: ${file}`);
+    // The vault documents the checklist names go into the file after it, read in the browser.
+    const checklist = forExport.sections.find(s => s.cover === cover && s.id === 'document-checklist');
+    const enclosures =
+      checklist && vaultOpen
+        ? await Promise.all(
+            checklistMatches(checklist.content, vault.documents, true).map(async ({ line, docs }) => ({
+              item: line,
+              pages: (
+                await Promise.all(docs.map(async d => pageImages(await vault.session!.openDocument(d, 'built bundle'), d.type)))
+              ).flat(),
+            }))
+          )
+        : [];
     const metadata = (report?.summary as { metadata?: { nitReference?: string } } | undefined)?.metadata;
-    const blob = await coverToBlob(forExport, cover, metadata?.nitReference ?? '[NIT No.]', companyProfile?.legalName ?? '[Company]');
+    const blob = await coverToBlob(
+      forExport,
+      cover,
+      metadata?.nitReference ?? '[NIT No.]',
+      companyProfile?.legalName ?? '[Company]',
+      enclosures
+    );
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -367,6 +400,7 @@ export default function FoundationBidPage() {
                       {sections.length} {sections.length === 1 ? 'section' : 'sections'}
                     </span>
                   </div>
+                  {cover === 'queries' && <p className="px-6 pt-5 text-sm leading-relaxed text-ink-soft">{note}</p>}
                   {cover === 'financial' && (
                     <div className="flex items-center gap-4 px-6 pt-5">
                       <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-seal text-paper" aria-hidden>

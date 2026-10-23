@@ -316,7 +316,7 @@ export const MODEL_SECTIONS: Record<string, ModelSection> = {
   queries: {
     id: 'pre-bid-queries',
     title: 'Pre-bid Queries and Clarifications',
-    cover: 'technical',
+    cover: 'queries',
     brief:
       'Between 8 and 10 numbered pre-bid queries (1., 2., ...) the contractor should raise with the department, and nothing else. ' +
       'Never ask about anything the tender already states clearly (deadlines, EMD, forms, how security deposit is ' +
