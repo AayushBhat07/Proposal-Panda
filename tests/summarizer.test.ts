@@ -41,6 +41,7 @@ test('finds the completion period in months', () => {
   assert.equal(findCompletionMonths('Period of completion: 18 (Eighteen) months including monsoon'), 18);
   assert.equal(findCompletionMonths('Time allowed for completion of work 12 months'), 12);
   assert.equal(findCompletionMonths('Completion period 18 months including monsoon.'), 18);
+  assert.equal(findCompletionMonths('148.67 Cr\n24 Months\nConstruction\nPeriod and 120\nMonths Maintenance Period'), 24);
   assert.equal(findCompletionMonths('No period here'), undefined);
 });
 
