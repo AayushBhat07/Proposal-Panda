@@ -26,6 +26,9 @@ export const STAGE_LABELS: Record<Stage, string> = {
   skipped: 'Not bidding',
 };
 
+/** Own keys only: `in` would also accept "toString" or "__proto__". */
+export const isStage = (value: unknown): value is Stage => typeof value === 'string' && Object.hasOwn(STAGE_LABELS, value);
+
 /** What the browser keeps for each tender (the analysis report as stored by the register). */
 export interface StoredReport {
   id: string;

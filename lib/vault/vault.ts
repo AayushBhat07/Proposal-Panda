@@ -4,6 +4,7 @@
  * a key, and nothing goes to the model. Older installs kept them in IndexedDB; tests pass an in-memory backend.
  */
 
+import type { VaultAction } from './actions';
 import { PBKDF2_ITERATIONS, deriveKey, open, openJson, randomBytes, seal, sealJson, type Sealed } from './crypto';
 
 export const DOCUMENT_KINDS = {
@@ -39,16 +40,7 @@ export interface VaultDocument {
 export interface AccessEntry {
   at: string;
   by: string;
-  action:
-    | 'unlocked'
-    | 'uploaded'
-    | 'opened'
-    | 'deleted'
-    | 'saved identifiers'
-    | 'exported bid'
-    | 'built bundle'
-    | 'moved to server'
-    | 'erased';
+  action: VaultAction;
   detail?: string;
 }
 
@@ -123,7 +115,8 @@ export async function unlockVault(backend: Backend, passphrase: string): Promise
 
 /** Where the access log goes. Details never carry file names, which can contain the PAN. */
 export interface AccessLog {
-  add(entry: AccessEntry): Promise<void>;
+  /** Who and when are stamped by whoever keeps the log. */
+  add(entry: Pick<AccessEntry, 'action' | 'detail'>): Promise<void>;
   read(): Promise<AccessEntry[]>;
 }
 
@@ -141,13 +134,12 @@ export function vaultSession(backend: Backend, key: CryptoKey, user: string, acc
   const journal: AccessLog = accessLog ?? {
     add: async entry => {
       const entries = (await read<AccessEntry[]>('log')) ?? [];
-      entries.unshift(entry);
+      entries.unshift({ at: new Date().toISOString(), by: user, ...entry });
       await write('log', entries.slice(0, LOG_LIMIT));
     },
     read: async () => (await read<AccessEntry[]>('log')) ?? [],
   };
-  const log = (action: AccessEntry['action'], detail?: string) =>
-    journal.add({ at: new Date().toISOString(), by: user, action, detail });
+  const log = (action: VaultAction, detail?: string) => journal.add({ action, detail });
 
   return {
     log,

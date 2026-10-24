@@ -36,9 +36,11 @@ import {
   withIdentifiers,
 } from '@/lib/vault/bidVault';
 import { buildBundle } from '@/lib/vault/bundle';
+import { pageImages } from '@/lib/vault/pageImages';
 import SiteOffice from '@/components/site-office/SiteOffice';
 import { bidJobKey, useJobsStore } from '@/state/jobsStore';
 import { DOCUMENT_KINDS } from '@/lib/vault/vault';
+import { SAMPLE_DATA_ENABLED, fillSampleBlanks } from '@/lib/company/sample';
 
 const COVERS: Array<{ cover: BidCover; label: string; title: string; file: string; note?: string }> = [
   { cover: 'technical', label: 'COVER I', title: 'Technical bid', file: 'cover-1-technical' },
@@ -49,9 +51,22 @@ const COVERS: Array<{ cover: BidCover; label: string; title: string; file: strin
     file: 'cover-2-financial',
     note: 'Opened only for bidders who pass Cover I. Prices are never generated: fill the proforma yourself.',
   },
+  {
+    cover: 'queries',
+    label: 'BEFORE THE BID',
+    title: 'Pre-bid queries',
+    file: 'pre-bid-queries',
+    note: 'Sent to the department before the pre-bid meeting. Not part of either cover.',
+  },
 ];
 
 type StoredBid = FoundationBid & { id: string };
+
+// Bids drafted before pre-bid queries had their own place carry them in Cover I.
+const withQueriesApart = (bid: StoredBid | null | undefined): StoredBid | null =>
+  bid
+    ? { ...bid, sections: bid.sections.map(s => (s.id === 'pre-bid-queries' ? { ...s, cover: 'queries' as const } : s)) }
+    : null;
 
 const reportTitle = (report: Record<string, unknown>) => {
   const metadata = (report.summary as { metadata?: { nameOfWork?: string; tenderTitle?: string } } | undefined)?.metadata;
@@ -67,6 +82,8 @@ export default function FoundationBidPage() {
   const [bid, setBid] = useState<StoredBid | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set when the tender couldn't be read: missing, or the server didn't answer. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   // The run lives in the jobs store so it keeps going if the user opens another page.
   const job = useJobsStore(state => state.jobs[bidJobKey(id)]);
   const startBid = useJobsStore(state => state.startBid);
@@ -82,10 +99,14 @@ export default function FoundationBidPage() {
   const vaultOpen = vault.status === 'unlocked' && can('vault.use');
 
   useEffect(() => {
-    Promise.all([fetchTender<Record<string, unknown>, StoredBid>(id).catch(() => null), fetchAnswers().catch(() => ({}))]).then(
+    const tender = fetchTender<Record<string, unknown>, StoredBid>(id).catch((err: Error) => {
+      setLoadError(err.message === 'No such tender.' ? "This tender isn't on the office register." : err.message);
+      return null;
+    });
+    Promise.all([tender, fetchAnswers().catch(() => ({}))]).then(
       ([tender, answers]) => {
         setReport(tender?.report ?? null);
-        setBid(tender?.bid ?? null);
+        setBid(withQueriesApart(tender?.bid));
         setSavedAnswers(answers);
         setIsLoaded(true);
       }
@@ -111,7 +132,7 @@ export default function FoundationBidPage() {
     return useJobsStore.subscribe(state => {
       if (state.jobs[key]?.status !== 'done') return;
       clearJob(key);
-      fetchTender<Record<string, unknown>, StoredBid>(id).then(tender => setBid(tender.bid), () => {});
+      fetchTender<Record<string, unknown>, StoredBid>(id).then(tender => setBid(withQueriesApart(tender.bid)), () => {});
     });
   }, [id, clearJob]);
 
@@ -144,8 +165,27 @@ export default function FoundationBidPage() {
         .join(ids?.pan || '[PAN]');
     const forExport = { ...bid, sections: bid.sections.map(s => ({ ...s, content: filled(s.content) })) };
     if (needsIds && vaultOpen) await vault.session!.log('exported bid', `${bid.tenderTitle}: ${file}`);
+    // The vault documents the checklist names go into the file after it, read in the browser.
+    const checklist = forExport.sections.find(s => s.cover === cover && s.id === 'document-checklist');
+    const enclosures =
+      checklist && vaultOpen
+        ? await Promise.all(
+            checklistMatches(checklist.content, vault.documents, true).map(async ({ line, docs }) => ({
+              item: line,
+              pages: (
+                await Promise.all(docs.map(async d => pageImages(await vault.session!.openDocument(d, 'built bundle'), d.type)))
+              ).flat(),
+            }))
+          )
+        : [];
     const metadata = (report?.summary as { metadata?: { nitReference?: string } } | undefined)?.metadata;
-    const blob = await coverToBlob(forExport, cover, metadata?.nitReference ?? '[NIT No.]', companyProfile?.legalName ?? '[Company]');
+    const blob = await coverToBlob(
+      forExport,
+      cover,
+      metadata?.nitReference ?? '[NIT No.]',
+      companyProfile?.legalName ?? '[Company]',
+      enclosures
+    );
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -196,6 +236,23 @@ export default function FoundationBidPage() {
     keep(updated);
   };
 
+  // Trying the app: every blank gets the sample contractor's details. With the vault open its certificates are
+  // attached first; any [attach] left gets a specimen note. Not remembered as the office's answers.
+  const handleSampleFill = () => {
+    if (!bid) return;
+    if (can('vault.use') && !vaultOpen && !window.confirm('The vault is locked, so its certificates won\'t be attached; the checklist gets specimen notes instead. Fill anyway?')) return;
+    const editedAt = new Date().toISOString();
+    keep({
+      ...bid,
+      sections: bid.sections.map(section => {
+        const attached =
+          section.id === 'document-checklist' && vaultOpen ? attachFromVault(section.content, vault.documents) : section.content;
+        const content = fillSampleBlanks(attached);
+        return content === section.content ? section : { ...section, content, editedAt };
+      }),
+    });
+  };
+
   // One PDF of the vault certificates in checklist order (the order of DOCUMENT_KINDS), built in the browser.
   const handleBundle = async () => {
     if (!bid || !vault.session) return;
@@ -234,7 +291,7 @@ export default function FoundationBidPage() {
   if (!report) {
     return (
       <div className="mx-auto max-w-xl px-4 py-24 text-center flex flex-col items-center gap-4">
-        <p className="font-serif text-2xl text-ink">This tender hasn&apos;t been analysed in this browser yet.</p>
+        <p className="font-serif text-2xl text-ink">{loadError ?? "This tender isn't on the office register."}</p>
         <Button variant="outline" onClick={() => router.push('/register')}>
           Back to the register
         </Button>
@@ -303,6 +360,7 @@ export default function FoundationBidPage() {
           blanks={sharedBlanks(bid.sections.map(s => s.content))}
           saved={savedAnswers}
           onFill={handleFill}
+          onFillSample={SAMPLE_DATA_ENABLED ? handleSampleFill : undefined}
         />
       )}
 
@@ -342,6 +400,7 @@ export default function FoundationBidPage() {
                       {sections.length} {sections.length === 1 ? 'section' : 'sections'}
                     </span>
                   </div>
+                  {cover === 'queries' && <p className="px-6 pt-5 text-sm leading-relaxed text-ink-soft">{note}</p>}
                   {cover === 'financial' && (
                     <div className="flex items-center gap-4 px-6 pt-5">
                       <div className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-seal text-paper" aria-hidden>

@@ -40,10 +40,17 @@ const CHECKLIST_LINES: Array<[DocumentKind, RegExp]> = [
   ['works', /similar works completed/i],
 ];
 
-/** Lines of the document checklist that a vault document can satisfy, with the documents for each. */
-export function checklistMatches(content: string, docs: VaultDocument[]): Array<{ line: string; docs: VaultDocument[] }> {
+/**
+ * Lines of the document checklist that a vault document can satisfy, with the documents for each: the lines still
+ * marked [attach], or with `all` every numbered item, which is what the Word export encloses.
+ */
+export function checklistMatches(
+  content: string,
+  docs: VaultDocument[],
+  all = false
+): Array<{ line: string; docs: VaultDocument[] }> {
   return content.split('\n').flatMap(line => {
-    if (!line.includes('[attach]')) return [];
+    if (!(all ? /^\d+\.\s/.test(line) : line.includes('[attach]'))) return [];
     const kind = CHECKLIST_LINES.find(([, pattern]) => pattern.test(line))?.[0];
     const matching = kind ? docs.filter(d => d.kind === kind) : [];
     return matching.length ? [{ line, docs: matching }] : [];

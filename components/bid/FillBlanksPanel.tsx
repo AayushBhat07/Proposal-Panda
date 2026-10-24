@@ -14,9 +14,11 @@ interface FillBlanksPanelProps {
   blanks: Array<{ blank: string; count: number }>;
   saved: Record<string, string>;
   onFill: (fills: BlankFill[]) => void;
+  /** Shown outside production: fills everything with the sample contractor's details. */
+  onFillSample?: () => void;
 }
 
-export default function FillBlanksPanel({ blanks, saved, onFill }: FillBlanksPanelProps) {
+export default function FillBlanksPanel({ blanks, saved, onFill, onFillSample }: FillBlanksPanelProps) {
   const [values, setValues] = useState<Record<string, string>>({});
   const valueOf = (blank: string) => values[blank] ?? saved[blank] ?? '';
   const fromSaved = blanks.filter(({ blank }) => saved[blank]).map(({ blank }) => ({ blank, value: saved[blank] }));
@@ -32,11 +34,18 @@ export default function FillBlanksPanel({ blanks, saved, onFill }: FillBlanksPan
           </h2>
           <p className="text-sm text-ink-soft">Each answer fills that blank in every section it appears in.</p>
         </div>
-        {fromSaved.length > 0 && (
-          <Button size="sm" onClick={() => onFill(fromSaved)}>
-            Fill {fromSaved.length} from saved answers
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {onFillSample && (
+            <Button size="sm" variant="outline" onClick={onFillSample}>
+              Fill all with sample data
+            </Button>
+          )}
+          {fromSaved.length > 0 && (
+            <Button size="sm" onClick={() => onFill(fromSaved)}>
+              Fill {fromSaved.length} from saved answers
+            </Button>
+          )}
+        </div>
       </div>
       <ul className="px-6 py-2">
         {blanks.map(({ blank, count }) => {

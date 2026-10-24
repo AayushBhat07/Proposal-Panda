@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { Packer } from 'docx';
 import JSZip from 'jszip';
 import mammoth from 'mammoth';
-import { countBlanks, fillBlank, isRememberable, sharedBlanks, splitBlanks, unwrapLines } from '../features/bid-generation/services/draftText';
+import { countBlanks, fillBlank, forSubmission, isRememberable, sharedBlanks, splitBlanks, unwrapLines } from '../features/bid-generation/services/draftText';
 import { buildCoverDocument } from '../features/bid-generation/services/bidDocx';
 import type { FoundationBid } from '../features/bid-generation/types/bid.types';
 
 test('counts and splits the placeholders a draft leaves', () => {
   const text = 'Inspected on [dd/mm/yyyy]. Bid capacity = ([A] × [N] × 2) − [B] = ₹ [___].';
-  assert.equal(countBlanks(text), 5);
+  assert.equal(countBlanks(text), 2, 'formula symbols [A] [N] [B] are not blanks');
   assert.deepEqual(
     splitBlanks('Date: [dd/mm/yyyy] done').map(p => [p.text, p.blank]),
     [['Date: ', false], ['[dd/mm/yyyy]', true], [' done', false]]
@@ -78,4 +78,36 @@ test('shared blanks skip table columns and edit notes', () => {
   assert.equal(fillBlank(contents[0] + contents[2], '[dd/mm/yyyy]', '16/10/2026').match(/16\/10\/2026/g)?.length, 2);
   assert.equal(isRememberable('[dd/mm/yyyy]'), false);
   assert.equal(isRememberable('[designation]'), true);
+});
+
+test('the export leaves out the notes kept for the contractor', () => {
+  const checklist = [
+    'Upload as one PDF in this order, unless the NIT specifies another order:',
+    '',
+    '1. EMD / Bid Security (specimen enclosed)',
+    '2. GST registration certificate (GSTIN 02AB) (attached from vault: GST registration certificate)',
+    '3. PAN card [attach]',
+  ].join('\n');
+  assert.equal(forSubmission(checklist), '1. EMD / Bid Security\n2. GST registration certificate (GSTIN 02AB)\n3. PAN card');
+  const compliance =
+    '1. Supporting documents enclosed at Annexure A; to be confirmed from company records.\n\n' +
+    'Key contract clauses (from the tender analysis; verify against the NIT):\n- Security deposit: Not specified in the tender.';
+  assert.equal(forSubmission(compliance), '1. Supporting documents enclosed at Annexure A.');
+});
+
+test('vault documents are enclosed after the checklist', async () => {
+  // A 1x1 PNG.
+  const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
+  const bid: FoundationBid = {
+    tenderId: 'T-1',
+    tenderTitle: 'Staff quarters',
+    generatedAt: new Date().toISOString(),
+    modelUsed: 'llama3',
+    sections: [{ id: 'document-checklist', title: 'Document Checklist', cover: 'technical', source: 'template', content: '1. PAN card [attach]' }],
+  };
+  const enclosures = [{ item: '1. PAN card [attach]', pages: [{ data: png, type: 'png' as const, width: 1, height: 1 }] }];
+  const buffer = await Packer.toBuffer(buildCoverDocument(bid, 'technical', '41/EE/2026', 'Acme Infra', enclosures));
+  const { value: html } = await mammoth.convertToHtml({ buffer });
+  assert.equal(html.match(/<img /g)?.length, 1);
+  assert.doesNotMatch(html, /\[attach\]/);
 });

@@ -1,5 +1,8 @@
-/** Indian two-bid system: Cover I (technical / eligibility) and Cover II (financial / price). */
-export type BidCover = 'technical' | 'financial';
+/**
+ * Indian two-bid system: Cover I (technical / eligibility) and Cover II (financial / price). Pre-bid queries go
+ * to the department before the bid, so they are kept apart from both covers.
+ */
+export type BidCover = 'technical' | 'financial' | 'queries';
 
 export interface BidSection {
   id: string;

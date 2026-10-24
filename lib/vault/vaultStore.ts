@@ -95,7 +95,7 @@ export const useVaultStore = create<VaultStore>((set, get) => {
       if (!localChecked) {
         localChecked = true;
         const localVault = await moveLocalVault(indexedDbBackend(), store());
-        if (localVault === 'moved') await serverAccessLog.add({ at: '', by: '', action: 'moved to server' });
+        if (localVault === 'moved') await serverAccessLog.add({ action: 'moved to server' });
         set({ localVault });
       }
       const createdAt = await vaultCreatedAt(store());

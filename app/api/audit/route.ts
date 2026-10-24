@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/auth/server';
+import { requirePermission, withPermission } from '@/lib/auth/server';
 import { getDb } from '@/lib/db/client';
 import { recent, record, VAULT_ACTIONS } from '@/lib/db/repos/audit';
 
@@ -12,13 +12,11 @@ export async function GET(request: NextRequest) {
 }
 
 /** The vault page reports what it did; the server stamps who and when, and nobody can remove the row. */
-export async function POST(request: NextRequest) {
-  const auth = await requirePermission(request, 'vault.use');
-  if (auth instanceof NextResponse) return auth;
+export const POST = withPermission('vault.use', async (request, auth) => {
   const body = await request.json().catch(() => null);
   if (!(VAULT_ACTIONS as readonly string[]).includes(body?.action)) {
     return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
   }
   record(getDb(), auth.email, body.action, 'vault', typeof body.detail === 'string' ? body.detail : null);
   return NextResponse.json({ ok: true }, { status: 201 });
-}
+});

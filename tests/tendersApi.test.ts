@@ -16,7 +16,7 @@ const report = (id: string) => ({
   fileName: `${id}.pdf`,
   uploadedAt: '2026-10-01T10:00:00.000Z',
   summary: { metadata: { tenderTitle: `Works ${id}`, keyDates: [] } },
-  compliance: { riskLevel: 'Low', complianceScore: 80 },
+  compliance: { riskLevel: 'Low' as const, complianceScore: 80 },
 });
 const bid = (id: string, content = 'GSTIN {GSTIN}') => ({ id, tenderId: id, sections: [{ id: 's1', content }] });
 
@@ -54,6 +54,7 @@ test('stages and corrected dates are saved; unknown stages are refused', async (
     tenderRoute.PATCH(await request('TenderAnalyst', '/api/tenders/T-STAGE', { method: 'PATCH', body }), p);
   assert.equal((await patch({ stage: 'submitted' })).status, 200);
   assert.equal((await patch({ stage: 'bribed' })).status, 400);
+  assert.equal((await patch({ stage: 'toString' })).status, 400, 'prototype keys are not stages');
   const dates = [{ kind: 'submission', date: '2026-11-01' }];
   const updated = await (await patch({ keyDates: dates })).json();
   assert.equal(updated.stage, 'submitted');

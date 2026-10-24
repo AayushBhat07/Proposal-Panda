@@ -43,7 +43,7 @@ test('model prose alone raises no risk: EMD, "specific", "multiple" and no "exte
   const { score } = await analyzeCompliance({ summary: blankSummary({ riskClauses: [] }, prose) });
   assert.equal(score.identifiedRisks.length, 0);
   assert.equal(score.submissionTraps.length, 0);
-  assert.equal(score.complianceScore, 80);
+  assert.equal(score.complianceScore, 100);
   assert.equal(score.riskLevel, 'Low');
 });
 
@@ -64,8 +64,38 @@ test('risks quote the tender, and quoted "should" does not fail the language che
 test('arbitration excluded and a 30-month period are flagged', async () => {
   const riskClauses = [{ label: 'Dispute resolution', text: 'Arbitration shall not be applicable to this contract.' }];
   const { score } = await analyzeCompliance({ summary: blankSummary({ riskClauses, completionMonths: 30 }) });
-  assert.equal(score.riskCategories.legal, 'Medium');
+  assert.equal(score.riskCategories.legal, 'High');
   assert.equal(score.riskCategories.technical, 'Medium');
+});
+
+test('routine clauses cost little, so a clean tender scores in the 90s', async () => {
+  const riskClauses = [
+    { label: 'Forfeiture', text: 'The EMD shall be forfeited if the bidder withdraws the bid.' },
+    { label: 'Final and binding', text: 'The decision of the Engineer-in-Charge shall be final and binding.' },
+    { label: 'Indemnity', text: 'The contractor shall indemnify the Institute against claims from third parties.' },
+    { label: 'Online submission', text: 'Bids shall be submitted online only.' },
+  ];
+  const { score } = await analyzeCompliance({ summary: blankSummary({ riskClauses, completionMonths: 3 }) });
+  assert.equal(score.complianceScore, 93);
+  assert.equal(score.riskLevel, 'Low');
+});
+
+test('a harsh EPC contract scores under 50 and reads High risk', async () => {
+  const riskClauses = [
+    { label: 'Unconditional guarantee', text: 'We unconditionally and irrevocably undertake to pay forthwith to the Authority.' },
+    { label: 'Forfeiture', text: 'The bid security shall be forfeited.' },
+  ];
+  const keyTerms = [{ label: 'Performance guarantee', text: 'Additional Performance Security shall be calculated @20% of the difference.' }];
+  const { score } = await analyzeCompliance({ summary: blankSummary({ riskClauses, keyTerms, completionMonths: 24 }) });
+  assert.equal(score.complianceScore, 48);
+  assert.equal(score.riskLevel, 'High');
+  assert.match(score.identifiedRisks[1].description, /20% guarantee/);
+});
+
+test('a short notice is capped and never reads Low risk', async () => {
+  const { score } = await analyzeCompliance({ summary: blankSummary({ riskClauses: [], totalChunks: 2 }) });
+  assert.equal(score.complianceScore, 70);
+  assert.equal(score.riskLevel, 'Medium');
 });
 
 test('older reports without quoted clauses report no missing clauses', async () => {

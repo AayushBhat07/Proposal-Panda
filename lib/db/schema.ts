@@ -4,6 +4,7 @@
  */
 
 import { sqliteTable, text, integer, index, blob } from 'drizzle-orm/sqlite-core';
+import type { Stage, StoredBid, StoredReport } from '@/lib/tenders/pipeline';
 
 const now = () => new Date().toISOString();
 
@@ -38,9 +39,9 @@ export const blankAnswers = sqliteTable('blank_answers', {
 /** One row per analysed tender: the stored report (summary, compliance, metadata) and its pipeline stage. */
 export const tenders = sqliteTable('tenders', {
   id: text('id').primaryKey(),
-  report: text('report', { mode: 'json' }).notNull(),
+  report: text('report', { mode: 'json' }).$type<StoredReport>().notNull(),
   /** Set by hand on the dashboard (submitted, won, lost…); null means work it out from the bid. */
-  stage: text('stage'),
+  stage: text('stage').$type<Stage>(),
   uploadedBy: text('uploaded_by'),
   createdAt: text('created_at').notNull().$defaultFn(now),
 });
@@ -60,7 +61,7 @@ export const bids = sqliteTable('bids', {
   id: text('id')
     .primaryKey()
     .references(() => tenders.id, { onDelete: 'cascade' }),
-  bid: text('bid', { mode: 'json' }).notNull(),
+  bid: text('bid', { mode: 'json' }).$type<StoredBid>().notNull(),
   updatedBy: text('updated_by'),
   updatedAt: text('updated_at').notNull().$defaultFn(now),
 });

@@ -3,12 +3,12 @@
  * Real backend integration with Phase 4A → 4B → 4C pipeline
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import { extname, join } from 'path';
 import { randomUUID } from 'crypto';
 import { tmpdir } from 'os';
-import { requirePermission } from '@/lib/auth/server';
+import { withPermission } from '@/lib/auth/server';
 import { executeIntelligencePipeline } from '@/features/intelligence-orchestrator';
 import { UnreadableDocumentError } from '@/features/summarization/services/textExtractor';
 import { streamProgress } from '@/lib/progress/stream';
@@ -18,10 +18,7 @@ import { record } from '@/lib/db/repos/audit';
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
-export async function POST(request: NextRequest) {
-  const auth = await requirePermission(request, 'tender.upload');
-  if (auth instanceof NextResponse) return auth;
-
+export const POST = withPermission('tender.upload', async (request, auth) => {
   let tempFilePath: string | null = null;
 
   try {
@@ -97,7 +94,7 @@ export async function POST(request: NextRequest) {
           });
           console.log(`[API] Pipeline completed in ${result.diagnostics.totalTimeMs}ms`);
           // On the office register before the browser hears it finished, so a closed tab loses nothing.
-          const stored = { id: tenderId, fileName: file.name, uploadedAt: new Date().toISOString(), ...result.report };
+          const stored = { ...result.report, id: tenderId, fileName: file.name, uploadedAt: new Date().toISOString() };
           // The type comes from the checked extension, never the browser, so the file can't be served back as HTML.
           const type = fileName.endsWith('.pdf')
             ? 'application/pdf'
@@ -121,7 +118,7 @@ export async function POST(request: NextRequest) {
     const { error: message, status } = pipelineError(error);
     return NextResponse.json({ error: message }, { status });
   }
-}
+});
 
 function pipelineError(error: unknown): { error: string; status: number } {
   if (error instanceof UnreadableDocumentError) return { error: error.message, status: 422 };

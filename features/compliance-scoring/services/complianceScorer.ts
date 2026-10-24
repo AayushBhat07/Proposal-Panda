@@ -76,6 +76,33 @@ export async function analyzeCompliance(
 }
 
 type RuleResult = { risks: IdentifiedRisk[]; scorePenalty: number; level: RiskLevel };
+
+/**
+ * Points off 100 for each condition. Clauses nearly every government tender carries (EMD forfeiture, final-and-
+ * binding decisions, a standard indemnity) cost little, so the score separates tenders by the conditions that
+ * actually hurt a contractor: guarantees encashable on demand, no arbitration, no price variation over a long job,
+ * days-long notice periods.
+ */
+export const PENALTY = {
+  unconditionalGuarantee: 25,
+  forfeiture: 2,
+  /** Performance guarantee above the usual 5%. */
+  heavyGuarantee: 15,
+  finalAndBinding: 2,
+  indemnity: 3,
+  arbitrationExcluded: 20,
+  noExtension: 10,
+  shortNotice: 12,
+  /** Completion of two years or more. */
+  longCompletion: 10,
+  /** No price variation on a job of a year or more; a shorter job costs `noPriceVariationShort`. */
+  noPriceVariation: 20,
+  noPriceVariationShort: 5,
+  delayCompensation: 5,
+} as const;
+
+/** Scores at or under this mean only a notice was read: provisional, never a clean bill. */
+export const THIN_DOCUMENT_CAP = 70;
 type Summary = ComplianceScoringInput['summary'];
 
 function levelFor(penalty: number, medium: number, high: number): RiskLevel {
@@ -103,7 +130,7 @@ async function performComplianceAnalysis(
   const { summary } = input;
   const clauses = clausesOf(summary);
 
-  const financialRisks = analyzeFinancialRisks(clauses);
+  const financialRisks = analyzeFinancialRisks(clauses, summary);
   const technicalRisks = analyzeTechnicalRisks(summary.metadata.completionMonths);
   const legalRisks = analyzeLegalRisks(clauses);
   const submissionRisks = analyzeSubmissionRisks(clauses);
@@ -128,7 +155,7 @@ async function performComplianceAnalysis(
   const penalty = Object.values(results).reduce((sum, r) => sum + r.scorePenalty, 0) + (conservativeBias ? 5 : 0);
   // A one- or two-page NIT or press notice carries no contract conditions; few risks found is not low risk.
   const thin = summary.metadata.totalChunks <= 3;
-  const complianceScore = Math.max(0, Math.min(thin ? 60 : 100, 80 - penalty));
+  const complianceScore = Math.max(0, Math.min(thin ? THIN_DOCUMENT_CAP : 100, 100 - penalty));
 
   const riskCategories = {
     financial: higherRisk(financialRisks.level, contractRisks.level),
@@ -137,10 +164,11 @@ async function performComplianceAnalysis(
     submission: submissionRisks.level,
   };
 
-  const overall = calculateOverallRiskLevel(riskCategories);
+  // The headline follows the breakdown, raised to the score's band so a 45 never reads "Medium" next to a 95.
+  const overall = higherRisk(calculateOverallRiskLevel(riskCategories), complianceScore < 50 ? 'High' : complianceScore < 80 ? 'Medium' : 'Low');
   return {
     complianceScore,
-    riskLevel: thin && overall === 'Low' ? 'Medium' : overall,
+    riskLevel: overall,
     riskCategories,
     identifiedRisks,
     missingOrWeakClauses: identifyMissingClauses(summary),
@@ -151,19 +179,28 @@ async function performComplianceAnalysis(
   };
 }
 
-/** Guarantees that can be encashed without consent, and deposits that can be forfeited. An EMD alone is not a risk. */
-function analyzeFinancialRisks(clauses: Record<string, string>): RuleResult {
+/**
+ * Guarantees that can be encashed without consent, a performance guarantee above the usual 5%, and deposits that can
+ * be forfeited. An EMD alone is not a risk.
+ */
+function analyzeFinancialRisks(clauses: Record<string, string>, summary: Summary): RuleResult {
   const risks: IdentifiedRisk[] = [];
   let scorePenalty = 0;
   if (clauses['Unconditional guarantee']) {
     risks.push(quotedRisk('Financial', clauses['Unconditional guarantee'], 'The guarantee can be encashed without the contractor\'s consent.'));
-    scorePenalty += 10;
+    scorePenalty += PENALTY.unconditionalGuarantee;
+  }
+  const guarantee = summary.metadata.keyTerms?.find((t) => t.label === 'Performance guarantee')?.text;
+  const percent = Math.max(0, ...[...(guarantee ?? '').matchAll(/(\d+(?:\.\d+)?)\s*%/g)].map((m) => Number(m[1])).filter((n) => n <= 50));
+  if (guarantee && percent > 5) {
+    risks.push(quotedRisk('Financial', guarantee, `A ${percent}% guarantee ties up more bank limits than the usual 5%.`));
+    scorePenalty += PENALTY.heavyGuarantee;
   }
   if (clauses['Forfeiture']) {
     risks.push(quotedRisk('Financial', clauses['Forfeiture'], 'The deposit or guarantee named here can be forfeited.'));
-    scorePenalty += 5;
+    scorePenalty += PENALTY.forfeiture;
   }
-  return { risks, scorePenalty, level: levelFor(scorePenalty, 8, 15) };
+  return { risks, scorePenalty, level: levelFor(scorePenalty, 10, 20) };
 }
 
 /** A completion period of two years or more ties up plant, staff and guarantees for that long. */
@@ -175,7 +212,7 @@ function analyzeTechnicalRisks(completionMonths: number | undefined): RuleResult
       description: `The tender specifies a completion period of ${completionMonths} months. Resources and guarantees stay committed for that period.`,
       sourceSection: 'tender text',
     }],
-    scorePenalty: 5,
+    scorePenalty: PENALTY.longCompletion,
     level: 'Medium',
   };
 }
@@ -185,18 +222,23 @@ function analyzeLegalRisks(clauses: Record<string, string>): RuleResult {
   let scorePenalty = 0;
   if (clauses['Final and binding']) {
     risks.push(quotedRisk('Legal', clauses['Final and binding'], 'Decisions covered by this clause bind the contractor.'));
-    scorePenalty += 5;
+    scorePenalty += PENALTY.finalAndBinding;
   }
   if (clauses['Indemnity']) {
     risks.push(quotedRisk('Legal', clauses['Indemnity'], 'The contractor carries the liabilities named here.'));
-    scorePenalty += 5;
+    scorePenalty += PENALTY.indemnity;
   }
   const disputes = clauses['Dispute resolution'];
   if (disputes && /arbitrat/i.test(disputes) && /\b(?:no|not|excluded)\b/i.test(disputes)) {
     risks.push(quotedRisk('Legal', disputes, 'Arbitration may not be available for disputes.'));
-    scorePenalty += 10;
+    scorePenalty += PENALTY.arbitrationExcluded;
   }
-  return { risks, scorePenalty, level: levelFor(scorePenalty, 8, 15) };
+  const extension = clauses['Extension of time'];
+  if (extension && /\bno (?:extension|claim)/i.test(extension)) {
+    risks.push(quotedRisk('Legal', extension, 'Delays the contractor does not cause may still not extend the time or be compensated.'));
+    scorePenalty += PENALTY.noExtension;
+  }
+  return { risks, scorePenalty, level: levelFor(scorePenalty, 10, 20) };
 }
 
 /** Online submission is normal; a deadline of a few days after an event is not. */
@@ -204,7 +246,7 @@ function analyzeSubmissionRisks(clauses: Record<string, string>): RuleResult {
   if (!clauses['Short notice']) return { risks: [], scorePenalty: 0, level: 'Low' };
   return {
     risks: [quotedRisk('Submission', clauses['Short notice'], 'The contractor has only this long to respond.')],
-    scorePenalty: 8,
+    scorePenalty: PENALTY.shortNotice,
     level: 'Medium',
   };
 }
@@ -250,7 +292,7 @@ export function analyzeContractTerms(
         `costs${months ? ` over the ${months}-month completion period` : ''}.`,
       sourceSection: 'tender text',
     });
-    scorePenalty += long ? 10 : 5;
+    scorePenalty += long ? PENALTY.noPriceVariation : PENALTY.noPriceVariationShort;
   }
 
   const delay = terms['Compensation for delay (Clause 2)'];
@@ -260,7 +302,7 @@ export function analyzeContractTerms(
       description: `The tender states: "${delay}"`,
       sourceSection: 'tender text',
     });
-    scorePenalty += 5;
+    scorePenalty += PENALTY.delayCompensation;
   }
 
   const advance = terms['Mobilisation advance'];
@@ -272,7 +314,7 @@ export function analyzeContractTerms(
     });
   }
 
-  const level: RiskLevel = scorePenalty >= 15 ? 'High' : scorePenalty >= 5 ? 'Medium' : 'Low';
+  const level: RiskLevel = scorePenalty >= 20 ? 'High' : scorePenalty >= 10 ? 'Medium' : 'Low';
   return { risks, scorePenalty, level };
 }
 
@@ -322,7 +364,7 @@ function generateConfidenceNotes(
     notes += 'Conservative bias applied (government tenders favor issuing authority). ';
   }
 
-  if (score >= 75) {
+  if (score >= 80) {
     notes += 'The tender presents manageable compliance requirements.';
   } else if (score >= 60) {
     notes += 'The tender contains notable compliance requirements requiring careful attention.';

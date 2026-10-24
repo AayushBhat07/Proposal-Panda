@@ -107,7 +107,11 @@ export function findCompletionMonths(text: string): number | undefined {
     },
     { lookahead: 1 }
   );
-  return found ? Number(found) : undefined;
+  if (found) return Number(found);
+  // EPC bid documents put the figure first: "24 Months Construction Period and 120 Months Maintenance Period".
+  const epc = text.match(/\b(\d{1,3})\s*months?\s+construction\s+period/i);
+  const months = epc ? Number(epc[1]) : 0;
+  return months >= 1 && months <= 120 ? months : undefined;
 }
 
 const AMOUNT =

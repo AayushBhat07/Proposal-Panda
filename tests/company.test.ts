@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { bidCapacity, formatLakh, lastFiveYears, parseLakh } from '../lib/company/profile';
 import { bidCapacity as bidCapacityProforma, declarations, documentChecklist, pastExperience } from '../features/bid-generation/services/bidTemplates';
 import type { CompanyProfile } from '../types/onboarding.types';
+import { fillSampleBlanks } from '../lib/company/sample';
+import { countBlanks } from '../features/bid-generation/services/draftText';
 
 const asOf = new Date('2026-10-16');
 const company: CompanyProfile = {
@@ -65,4 +67,16 @@ test('proformas use the company file and keep blanks only where it is empty', ()
   const bare = { ...input, company: { legalName: 'X', registrationClass: 'Class II', registeredAddress: 'Y' } };
   assert.match(bidCapacityProforma(bare), /\*\*A\*\* = maximum value/);
   assert.match(declarations(bare), /\[name of authorised signatory\], \[designation\]/);
+});
+
+test('sample data fills every blank but model flags', () => {
+  const text =
+    'Signed [name of authorised signatory], [Designation], at [city] on [dd/mm/yyyy]. EMD [₹ ___]. Rate [below / above / at par].\n' +
+    'Similar work: [Name of work] for [client], [value], [start date] to [completion date]. Other: [something odd].\n' +
+    'GST certificate [attach]. [Edit needed: check the NIT] Option [A].';
+  const filled = fillSampleBlanks(text, new Date('2026-10-18T10:00:00Z'));
+  assert.equal(countBlanks(filled), 1);
+  assert.match(filled, /Signed Rajesh Kumar Thakur, Director, at Parwanoo on 18\/10\/2026\. EMD ₹ 5,00,000\. Rate below\./);
+  assert.match(filled, /for HP PWD, ₹ 2208 lakh, 04\/2021 to 09\/2022\. Other: Specimen\./);
+  assert.match(filled, /GST certificate \(specimen enclosed\)\. \[Edit needed: check the NIT\] Option \[A\]\./);
 });
