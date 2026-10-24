@@ -49,12 +49,13 @@ function runs(line: string): TextRun[] {
 }
 
 function paragraphs(content: string): Paragraph[] {
-  return unwrapLines(forSubmission(content)).split('\n').map(raw => {
+  // Blank lines only separate paragraphs; as empty Word paragraphs they double the spacing.
+  return unwrapLines(forSubmission(content)).split('\n').filter(raw => raw.trim()).map(raw => {
     const line = raw.trimEnd();
     const bullet = /^\s*[-•]\s+/.exec(line);
     if (bullet) return new Paragraph({ children: runs(line.slice(bullet[0].length)), bullet: { level: 0 } });
     const indent = /^\s+/.test(line) ? { left: 360 } : undefined;
-    return new Paragraph({ children: runs(line.trim()), indent, spacing: { after: 80 } });
+    return new Paragraph({ children: runs(line.trim()), indent, spacing: { after: 120 } });
   });
 }
 
@@ -89,7 +90,7 @@ export function buildCoverDocument(
       default: {
         document: { run: { font: 'Times New Roman', size: 24 } },
         title: { run: { font: 'Times New Roman', size: 36, bold: true, color: '000000' } },
-        heading1: { run: { font: 'Times New Roman', size: 28, bold: true, color: '000000' }, paragraph: { spacing: { after: 160 } } },
+        heading1: { run: { font: 'Times New Roman', size: 28, bold: true, color: '000000' }, paragraph: { spacing: { before: 360, after: 160 } } },
       },
     },
     sections: [
@@ -109,8 +110,8 @@ export function buildCoverDocument(
           new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: bid.tenderTitle, bold: true })] }),
           new Paragraph({ alignment: AlignmentType.CENTER, children: runs(`NIT No. ${nitRef}`) }),
           new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 400 }, children: [new TextRun(`Submitted by ${companyName}`)] }),
-          ...sections.flatMap((section, index) => [
-            new Paragraph({ heading: HeadingLevel.HEADING_1, pageBreakBefore: index > 0, children: [new TextRun(section.title)] }),
+          ...sections.flatMap(section => [
+            new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(section.title)] }),
             ...paragraphs(section.content),
             ...(section.id === 'document-checklist' ? enclosures.flatMap(enclosure) : []),
           ]),

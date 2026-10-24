@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Packer } from 'docx';
+import JSZip from 'jszip';
 import mammoth from 'mammoth';
 import { countBlanks, fillBlank, forSubmission, isRememberable, sharedBlanks, splitBlanks, unwrapLines } from '../features/bid-generation/services/draftText';
 import { buildCoverDocument } from '../features/bid-generation/services/bidDocx';
@@ -43,6 +44,24 @@ test('a cover file holds only that cover', async () => {
   assert.match(text, /Dear Sir/);
   assert.doesNotMatch(text, /\*\*/);
   assert.doesNotMatch(text, /Price Bid/);
+});
+
+test('sections flow on without forced page breaks or empty paragraphs', async () => {
+  const bid: FoundationBid = {
+    tenderId: 'T-1',
+    tenderTitle: 'Staff quarters',
+    generatedAt: new Date().toISOString(),
+    modelUsed: 'llama3',
+    sections: [
+      { id: 'a', title: 'Document Checklist', cover: 'technical', source: 'template', content: 'Upload in this order:\n\n1. EMD\n2. PAN' },
+      { id: 'b', title: 'Scope of Work', cover: 'technical', source: 'model', content: 'Roads.\n\n\nDrains.' },
+    ],
+  };
+  const zip = await JSZip.loadAsync(await Packer.toBuffer(buildCoverDocument(bid, 'technical', '41/EE/2026', 'Acme Infra')));
+  const xml = await zip.file('word/document.xml')!.async('string');
+  assert.doesNotMatch(xml, /pageBreakBefore/);
+  const paragraphs = xml.match(/<w:p>.*?<\/w:p>/g) ?? [];
+  assert.equal(paragraphs.filter(p => !p.includes('<w:t')).length, 0);
 });
 
 test('shared blanks skip table columns and edit notes', () => {
