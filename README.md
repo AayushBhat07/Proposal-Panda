@@ -3,7 +3,7 @@
 Contractors upload a government tender (PDF or DOCX), the app analyses it on local models, and then
 drafts a foundation bid from that analysis, also on a local model.
 
-Built by [Aayush Bhat](https://aayushbhat.vercel.app) · [Case study](https://aayushbhat.vercel.app/projects/proposalpanda)
+Built by [Aayush Bhat](https://aayush-receipts.vercel.app/#exhibit-c) · [Case study](https://aayushbhat.vercel.app/projects/proposalpanda)
 
 ## Run it
 
